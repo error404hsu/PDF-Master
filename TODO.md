@@ -1,6 +1,6 @@
 # PDF Master — 改善計畫與實作清單
 
-標示說明：`✅ 已完成` / `🚧 進行中` / `📌 規劃中` / `💡 建議`
+標示說明：`✅ 已完成` / `🛧 進行中` / `📌 規劃中` / `💡 建議`
 
 實作時請同步更新本檔與 README.md。
 
@@ -8,7 +8,7 @@
 
 ## 🖼️ 圖片轉 PDF（新功能）
 
-> **背景**：辦公室常需將掃描圖片（JPG/TIFF）與現有 PDF 合併。PyMuPDF 原生支援讀入多種圖片格式，**無須新增任何相依套件**。
+> **背景**：辦公室常需將揃描圖片（JPG/TIFF）與現有 PDF 合併。PyMuPDF 原生支援讀入多種圖片格式，**無須新增任何相依套件**。
 
 ### 支援格式
 
@@ -16,10 +16,10 @@
 |------|---------|
 | `.jpg` / `.jpeg` | 最常見 |
 | `.png` | 支援透明背景（轉為 PDF 時自動白底）|
-| `.tiff` / `.tif` | 掃描文件常用格式；**支援多頁 TIFF**（每幀記為一頁）|
+| `.tiff` / `.tif` | 揃描文件常用格式；**支援多頁 TIFF**（每幀記為一頁）|
 | `.bmp` | Windows 點陣圖 |
 | `.webp` | 現代網頁圖片 |
-| `.gif` | 取静態幀轉換 |
+| `.gif` | 取靜態幀轉換 |
 
 ### 實作指引
 
@@ -66,7 +66,7 @@ def inspect_image(self, path: Path) -> ImageInspectionResult:
     path = Path(path)
     # fitz.open() 可直接開啟圖片，多頁 TIFF 會自動展開多頁
     with fitz.open(path) as doc:
-        page_count = doc.page_count  # 多頁 TIFF 為幤數
+        page_count = doc.page_count  # 多頁 TIFF 為幀數
         first_page = doc.load_page(0)
         rect = first_page.rect
         return ImageInspectionResult(
@@ -100,7 +100,7 @@ def open_files(
             if path.suffix.lower() in IMAGE_SUFFIXES:
                 ids = self._open_image(path)   # 圖片路徑
             else:
-                ids = self._open_pdf(path)     # PDF 路徑（原逻輯）
+                ids = self._open_pdf(path)     # PDF 路徑（原邏輯）
             added_ids.extend(ids)
         except Exception:
             failed.append(path)
@@ -108,10 +108,9 @@ def open_files(
     return added_ids, failed
 
 def _open_image(self, path: Path) -> list[str]:
-    """\u5c07圖片檔轉為臨時 PDF bytes 再進入工作區。多頁 TIFF 會展開多頁。"""
+    """將圖片檔轉為臨時 PDF bytes 再進入工作區。多頁 TIFF 會展開多頁。"""
     result = self.backend.inspect_image(path)
     doc_id = new_id()
-    # 圖片沒有原始 page_labels / toc / metadata，偵用 PdfInspectionResult
     inspection = PdfInspectionResult(
         path=path,
         page_count=result.page_count,
@@ -143,7 +142,7 @@ def _open_image(self, path: Path) -> list[str]:
 ```python
 # 在 export_pages() 的圖片路徑中取代直接 fitz.open(source_path)
 def _open_source_as_pdf(self, source_path: Path):
-    """PDF 或圖片都回傳可 insert_pdf 的 fitz.Document。"""
+    """圖片或 PDF 都回傳可 insert_pdf 的 fitz.Document（統一介面）"""
     suffix = source_path.suffix.lower()
     if suffix in SUPPORTED_IMAGE_SUFFIXES:
         img_doc = self.fitz.open(source_path)     # 開啟圖片
@@ -189,12 +188,20 @@ tests/test_workspace.py  ← 圖片相關測試案例
 
 ### 高優先度
 
-- `📌 規劃中` **错誤隔離：`open_pdfs()` 批次處理改為逐檔 try/except**
-  - 目前嗥任一 PDF 損壞就中斷整個批次
+- `📌 規劃中` **錯誤隔離：`open_pdfs()` 批次處理改為逐檔 try/except**
+  - 目前任一 PDF 損壞就中斷整個批次
   - 建議回傳 `(added_ids, failed_paths)` tuple，UI 層再核對失敗清單對用戶提示
   - 相關檔案：`core/workspace.py` `open_pdfs()`
 
-- `📌 規劃中` **GUI 分層：將 `gui_main.py`（40KB）拆分成 MVC/MVP**
+- `🛧 進行中` **GUI 分層：將 `gui_main.py`（40KB）拆分成 MVC/MVP**
+  - **Phase 1 完成**（`gui/` 套件已創建）
+    - `gui/styles.py` — 集中管理所有 QSS 樣式常數與色票
+    - `gui/workers.py` — `ThumbnailWorker` / `HighResWorker` 背景執行緒
+    - `gui/dialogs.py` — `PreviewDialog` / `ExportPdfDialog` 對話框
+    - `gui/models.py`  — `SnapshotHistory` / `PdfPageModel` Qt 資料模型
+    - `gui/views.py`   — `PageCardDelegate` / `PageListView` 視圖元件
+    - `gui_main.py` 精簡化：僅保留 `MainWindow` 骨架與 `main()` 入口
+  - **Phase 2 規劃中**：引入 `gui/interfaces.py`（Protocol）與 `gui/presenter.py`（MVP 分層）
   - 目標結構：`views/`（純 UI 元件）、`controllers/`（業務橋接）
   - `core/` 保持完全無 PySide6 依賴
 
@@ -242,7 +249,7 @@ tests/test_workspace.py  ← 圖片相關測試案例
 - `📌 規劃中` **保留書籤（TOC）**— `ExportOptions.keep_bookmarks`
 - `📌 規劃中` **保留附件（`keep_attachments`）**
 - `📌 規劃中` **保留互動表單（`keep_forms`）**
-- `📌 規劃中` **子資料夾遞迴掃描**
+- `📌 規劃中` **子資料夾遞迴揃描**
 - `📌 規劃中` **匯出前 Preflight 報告**（缺字型、頁面尺寸不一致）
 
 ---
@@ -266,8 +273,8 @@ tests/test_workspace.py  ← 圖片相關測試案例
 ## ✨ 進階功能（選做）
 
 - `📌 規劃中` **浮水印／頁碼 Stamp**
-- `📌 規劃中` **裁切框（Crop Box）視覺編輯**
-- `📌 規劃中` **監看資料夾／掃描佇列**
+- `📌 規劃中` **裁切框（Crop Box）視覚編輯**
+- `📌 規劃中` **監看資料夾／揃描佇列**
 - `📌 規劃中` **多語言 i18n 支援**
 
 ---
@@ -281,3 +288,4 @@ tests/test_workspace.py  ← 圖片相關測試案例
 - 快捷鍵 Ctrl+A / Delete / Ctrl+Shift+E
 - `FakeBackend` + `test_workspace.py` 基礎測試套件
 - DIP 架構：`core/protocols.py` PdfBackend Protocol
+- **GUI 分層 Phase 1**：`gui/` 套件拆分（styles / workers / dialogs / models / views）
