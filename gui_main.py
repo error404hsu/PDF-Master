@@ -13,6 +13,8 @@ UI/UX 改進（feat commit）：
   - PageCardDelegate 來源色帶（多檔區分）
   - PageListView 右鍵情境選單
   - 圖片檔案 drag-and-drop 支援
+  - 現代化外觀：圓角升級、卡片陰影、深色模式自動偵測
+  - 字體跟隨 OS（不硬寫 Microsoft JhengHei）
 """
 from __future__ import annotations
 
@@ -26,15 +28,16 @@ from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QAction, QDragEnterEvent, QDropEvent, QFont, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
+    QFrame,
+    QHBoxLayout,
     QLabel,
     QMainWindow,
     QProgressBar,
-    QHBoxLayout,
+    QPushButton,
+    QSizePolicy,
     QToolBar,
     QVBoxLayout,
     QWidget,
-    QFrame,
-    QPushButton,
 )
 
 try:
@@ -72,8 +75,9 @@ class MainWindow(QMainWindow):
     # 初始化
     # ------------------------------------------------------------------
 
-    def __init__(self) -> None:
+    def __init__(self, is_dark: bool = False) -> None:
         super().__init__()
+        self._is_dark = is_dark
         self.setWindowTitle("PDF排列哥 Pro")
         self.resize(1300, 800)
         self.setAcceptDrops(True)
@@ -152,6 +156,8 @@ class MainWindow(QMainWindow):
     def _build_ui(self) -> None:
         central = QWidget()
         self.setCentralWidget(central)
+        if self._is_dark:
+            central.setStyleSheet(f"background-color: {UiStyles.DARK_BG};")
 
         main_layout = QVBoxLayout(central)
         main_layout.setContentsMargins(0, 0, 0, 0)
@@ -177,7 +183,9 @@ class MainWindow(QMainWindow):
         self.view = PageListView(list_container)
         self.view.setModel(self.model)
         self.view.setItemDelegate(PageCardDelegate())
-        self.view.setStyleSheet(UiStyles.LIST_VIEW)
+        self.view.setStyleSheet(
+            UiStyles.LIST_VIEW_DARK if self._is_dark else UiStyles.LIST_VIEW
+        )
         list_layout.addWidget(self.view)
 
         # Empty State 疊加層
@@ -189,20 +197,30 @@ class MainWindow(QMainWindow):
         # Footer：左側狀態 + 右側快捷鍵提示
         footer_widget = QWidget()
         footer_widget.setFixedHeight(32)
-        footer_widget.setStyleSheet(
-            "background-color: white; border-top: 1px solid #e2e8f0;"
-        )
+        if self._is_dark:
+            footer_widget.setStyleSheet(
+                f"background-color: {UiStyles.DARK_SURFACE};"
+                f" border-top: 1px solid {UiStyles.DARK_BORDER};"
+            )
+        else:
+            footer_widget.setStyleSheet(
+                "background-color: white; border-top: 1px solid #e2e8f0;"
+            )
         footer_layout = QHBoxLayout(footer_widget)
         footer_layout.setContentsMargins(16, 0, 16, 0)
         footer_layout.setSpacing(0)
 
         self.footer_status = QLabel(" 總計 0 頁")
-        self.footer_status.setStyleSheet(UiStyles.FOOTER)
+        self.footer_status.setStyleSheet(
+            UiStyles.FOOTER_DARK if self._is_dark else UiStyles.FOOTER
+        )
 
         self.footer_hint = QLabel(
             "Ctrl+A 全選 ｜ Del 刪除 ｜ Ctrl+Z 復原 ｜ 雙擊預覽 ｜ 拖曳排序"
         )
-        self.footer_hint.setStyleSheet(UiStyles.FOOTER_HINT)
+        self.footer_hint.setStyleSheet(
+            UiStyles.FOOTER_HINT_DARK if self._is_dark else UiStyles.FOOTER_HINT
+        )
 
         footer_layout.addWidget(self.footer_status)
         footer_layout.addStretch()
@@ -216,7 +234,9 @@ class MainWindow(QMainWindow):
         toolbar.setMovable(False)
         toolbar.setFloatable(False)
         toolbar.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
-        toolbar.setStyleSheet(UiStyles.TOOLBAR)
+        toolbar.setStyleSheet(
+            UiStyles.TOOLBAR_DARK if self._is_dark else UiStyles.TOOLBAR
+        )
 
         # --- 開啟檔案 / 資料夾 ---
         self.act_open_file = QAction(AppIcons.get("open_file"), "開啟檔案", self)
@@ -244,22 +264,14 @@ class MainWindow(QMainWindow):
 
         # --- 右側 spacer ---
         spacer = QWidget()
-        spacer.setSizePolicy(
-            spacer.sizePolicy().horizontalPolicy(),  # 取得當前策略後改用 Expanding
-            spacer.sizePolicy().verticalPolicy(),
-        )
-        from PySide6.QtWidgets import QSizePolicy
         spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         toolbar.addWidget(spacer)
 
         # --- 匯出按鈕區 ---
         self.act_export_sel = QAction(AppIcons.get("export_selected"), "匯出選取", self)
         self.act_export = QAction(AppIcons.get("export"), "匯出結果", self)
-
         toolbar.addAction(self.act_export_sel)
         toolbar.addAction(self.act_export)
-
-        # 匯出結果 QToolButton 套用 primary 樣式
         toolbar.addSeparator()
 
         self.addToolBar(Qt.TopToolBarArea, toolbar)
@@ -306,7 +318,6 @@ class MainWindow(QMainWindow):
         self.view.pages_reordered.connect(self.presenter.on_pages_reordered)
         self.view.pdf_files_dropped.connect(self.presenter.load_files)
 
-        # 右鍵選單信號連接
         self.view.context_rotate_left.connect(lambda: self.presenter.on_rotate_pages(-90))
         self.view.context_rotate_180.connect(lambda: self.presenter.on_rotate_pages(180))
         self.view.context_rotate_right.connect(lambda: self.presenter.on_rotate_pages(90))
@@ -411,10 +422,20 @@ def main() -> None:
     )
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
-    default_font = QFont("Microsoft JhengHei", 10)
-    default_font.setStyleStrategy(QFont.PreferAntialias)
-    app.setFont(default_font)
-    window = MainWindow()
+
+    # 建議一：字體跟隨 OS（不硬寫 Microsoft JhengHei）
+    # Windows → Segoe UI Variable / Microsoft JhengHei UI
+    # macOS   → SF Pro / PingFang TC
+    # Linux   → Noto Sans / WenQuanYi
+    font = app.font()
+    font.setPointSize(10)
+    font.setStyleStrategy(QFont.PreferAntialias)
+    app.setFont(font)
+
+    # 建議四：深色模式自動偵測並套用 palette + QSS
+    is_dark = UiStyles.apply_theme(app)
+
+    window = MainWindow(is_dark=is_dark)
     window.show()
     sys.exit(app.exec())
 

@@ -26,6 +26,7 @@ from PySide6.QtGui import (
     QDragMoveEvent,
     QDropEvent,
     QDragEnterEvent,
+    QLinearGradient,
 )
 
 from gui.models import PAGE_ROLE, THUMB_STATE_ROLE, THUMB_ERROR_ROLE, ThumbState
@@ -38,7 +39,7 @@ _source_color_cache: dict[str, str] = {}
 _LINE_COLOR = "#3b82f6"
 _LINE_WIDTH = 2
 _DIAMOND_R = 5
-_INDICATOR_PADDING = 4  # 插入線距卡片上下邊緣的縮排 px
+_INDICATOR_PADDING = 4
 
 _HOVER_BORDER_COLOR = "#60a5fa"
 _HOVER_FILL_COLOR = "#dbeafe"
@@ -58,6 +59,26 @@ def clear_source_colors() -> None:
     _source_color_cache.clear()
 
 
+def _draw_card_shadow(painter: QPainter, rect: QRect, radius: int) -> None:
+    """以多層低透明度圓角矩形模擬卡片投影（不依賴 QGraphicsDropShadowEffect）。"""
+    r, g, b, base_alpha = UiStyles.CARD_SHADOW_COLOR
+    dx, dy = UiStyles.CARD_SHADOW_OFFSET
+    blur = UiStyles.CARD_SHADOW_RADIUS
+    painter.save()
+    painter.setRenderHint(QPainter.Antialiasing)
+    painter.setPen(Qt.NoPen)
+    layers = 5
+    for i in range(layers, 0, -1):
+        spread = i
+        alpha = int(base_alpha * (i / layers) * 0.9)
+        shadow_rect = rect.adjusted(-spread, -spread + dy, spread, spread + dy)
+        shadow_rect.translate(dx, dy)
+        color = QColor(r, g, b, alpha)
+        painter.setBrush(QBrush(color))
+        painter.drawRoundedRect(shadow_rect, radius + spread * 0.5, radius + spread * 0.5)
+    painter.restore()
+
+
 class PageCardDelegate(QStyledItemDelegate):
     def paint(self, painter, option, index):
         page = index.data(PAGE_ROLE)
@@ -72,19 +93,25 @@ class PageCardDelegate(QStyledItemDelegate):
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setRenderHint(QPainter.SmoothPixmapTransform)
 
-        rect = option.rect.adjusted(6, 6, -6, -6)
+        rect = option.rect.adjusted(8, 8, -8, -8)
         thumb_area = rect.adjusted(10, 14, -10, -50)
         is_selected = bool(option.state & QStyle.State_Selected)
+        radius = UiStyles.CARD_RADIUS
 
+        # 1. 卡片陰影（在卡片底層繪製）
+        _draw_card_shadow(painter, rect, radius)
+
+        # 2. 卡片主體
         if is_selected:
-            painter.setPen(QPen(QColor(UiStyles.PRIMARY), 3))
+            painter.setPen(QPen(QColor(UiStyles.PRIMARY), 2.5))
             painter.setBrush(QColor(UiStyles.PRIMARY_SOFT))
         else:
             painter.setPen(QPen(QColor(UiStyles.CARD_BORDER), 1))
             painter.setBrush(Qt.white)
 
-        painter.drawRoundedRect(rect, 8, 8)
+        painter.drawRoundedRect(rect, radius, radius)
 
+        # 3. 來源色帶
         source_pdf = getattr(page, "source_pdf", "") or ""
         if source_pdf:
             band_color = _get_source_color(source_pdf)
@@ -93,13 +120,21 @@ class PageCardDelegate(QStyledItemDelegate):
             band_rect = QRect(rect.x() + 1, rect.y() + 1, rect.width() - 2, 5)
             painter.drawRoundedRect(band_rect, 3, 3)
 
+        # 4. 縮圖 / Placeholder
         if pixmap and not pixmap.isNull():
             scaled = pixmap.scaled(
                 thumb_area.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation,
             )
             x = thumb_area.x() + (thumb_area.width() - scaled.width()) // 2
             y = thumb_area.y() + (thumb_area.height() - scaled.height()) // 2
+            # 縮圖圓角剪裁
+            painter.save()
+            from PySide6.QtGui import QPainterPath
+            clip_path = QPainterPath()
+            clip_path.addRoundedRect(thumb_area, 4, 4)
+            painter.setClipPath(clip_path)
             painter.drawPixmap(x, y, scaled)
+            painter.restore()
         else:
             placeholder_rect = thumb_area.adjusted(8, 8, -8, -8)
             if thumb_state == ThumbState.FAILED:
@@ -123,6 +158,7 @@ class PageCardDelegate(QStyledItemDelegate):
                 painter.setFont(font)
                 painter.drawText(placeholder_rect, Qt.AlignCenter, "載入中...")
 
+        # 5. 頁碼標籤
         painter.setPen(QColor(UiStyles.TEXT_MUTED))
         font = painter.font()
         font.setBold(False)
@@ -134,6 +170,7 @@ class PageCardDelegate(QStyledItemDelegate):
             f"第 {index.row() + 1} 頁",
         )
 
+        # 6. 來源頁碼 / 旋轉角度資訊
         font.setPointSize(9)
         painter.setFont(font)
         info = f"{page.source_page_label} | {page.effective_rotation}°"
@@ -198,19 +235,21 @@ class PageListView(QListView):
         if not self.selectionModel().selectedIndexes():
             return
 
+        is_dark = UiStyles.is_dark_mode()
         menu = QMenu(self)
-        menu.setStyleSheet("""
+        menu_qss = UiStyles.CONTEXT_MENU_DARK if is_dark else """
         QMenu {
             background-color: #ffffff;
             border: 1px solid #e2e8f0;
-            border-radius: 6px;
+            border-radius: 10px;
             padding: 4px;
             font-size: 10pt;
         }
-        QMenu::item { padding: 6px 24px; border-radius: 4px; color: #1e293b; }
+        QMenu::item { padding: 6px 24px; border-radius: 6px; color: #1e293b; }
         QMenu::item:selected { background-color: #eff6ff; color: #1e40af; }
         QMenu::separator { height: 1px; background-color: #e2e8f0; margin: 4px 8px; }
-        """)
+        """
+        menu.setStyleSheet(menu_qss)
 
         act_rot_l = menu.addAction("↺ 左轉 90°")
         act_rot_180 = menu.addAction("↕ 轉 180°")
@@ -246,7 +285,6 @@ class PageListView(QListView):
         model = self.model()
         if model is None:
             return []
-
         items: list[tuple[int, QRect]] = []
         for row in range(model.rowCount()):
             rect = self.visualRect(model.index(row, 0))
@@ -268,7 +306,6 @@ class PageListView(QListView):
                 current = [(row, rect)]
                 current_top = rect.top()
                 continue
-
             tolerance = max(12, rect.height() // 3)
             if current_top is not None and abs(rect.top() - current_top) <= tolerance:
                 current.append((row, rect))
@@ -297,66 +334,45 @@ class PageListView(QListView):
     def _pick_visual_row(self, pos: QPoint, visual_rows: list[dict]) -> dict:
         best_row = visual_rows[0]
         best_dist = float("inf")
-
         for row_info in visual_rows:
             top = row_info["top"]
             bottom = row_info["bottom"]
-
             if top <= pos.y() <= bottom:
                 dist = 0
             elif pos.y() < top:
                 dist = top - pos.y()
             else:
                 dist = pos.y() - bottom
-
             if dist < best_dist:
                 best_dist = dist
                 best_row = row_info
-
         return best_row
 
     def _get_target_drop_info(self, pos: QPoint) -> tuple[int, int, int, int, int]:
-        """
-        穩定版幾何策略：
-        1. 先依 visualRect 的 top 分組成「視覺列」
-        2. 用滑鼠 y 找到最接近的視覺列
-        3. 為該列建立所有插槽（列首 / 卡片間 / 列尾）
-        4. 用滑鼠 x 找最近插槽，回傳 target index 與插入線位置
-        5. 同時回傳要高亮的目標卡片 row
-        """
         model = self.model()
         if model is None:
             return -1, -1, 0, 0, -1
-
         count = model.rowCount()
         if count == 0:
             return 0, 20, 20, self.viewport().height() - 20, -1
-
         visual_rows = self._build_visual_rows()
         if not visual_rows:
             return 0, 20, 20, self.viewport().height() - 20, -1
-
         row_info = self._pick_visual_row(pos, visual_rows)
         items: list[tuple[int, QRect]] = row_info["items"]
         half_gap = self.spacing() // 2
-
         slots: list[tuple[int, int, int]] = []
-
         first_row, first_rect = items[0]
         slots.append((first_row, first_rect.left() - half_gap, first_row))
-
         for (left_row, left_rect), (right_row, right_rect) in zip(items, items[1:]):
             slot_x = (left_rect.right() + right_rect.left()) // 2
             slots.append((right_row, slot_x, right_row))
-
         last_row, last_rect = items[-1]
         slots.append((last_row + 1, last_rect.right() + half_gap, last_row))
-
         target_index, line_x, hover_row = min(
             slots,
             key=lambda item: abs(pos.x() - item[1]),
         )
-
         y_top = row_info["top"] + _INDICATOR_PADDING
         y_bot = row_info["bottom"] - _INDICATOR_PADDING
         return target_index, line_x, y_top, y_bot, hover_row
@@ -367,10 +383,8 @@ class PageListView(QListView):
         bar = self.verticalScrollBar()
         if bar is None:
             return
-
         y = pos.y()
         height = self.viewport().height()
-
         if y < _AUTO_SCROLL_MARGIN:
             bar.setValue(max(bar.minimum(), bar.value() - _AUTO_SCROLL_STEP))
         elif y > height - _AUTO_SCROLL_MARGIN:
@@ -381,48 +395,37 @@ class PageListView(QListView):
     def _draw_hover_target(self, painter: QPainter) -> None:
         if self._hover_row < 0:
             return
-
         model = self.model()
         if model is None or self._hover_row >= model.rowCount():
             return
-
         rect = self.visualRect(model.index(self._hover_row, 0))
         if not rect.isValid():
             return
-
-        rect = rect.adjusted(6, 6, -6, -6)
-
+        rect = rect.adjusted(8, 8, -8, -8)
         painter.save()
         painter.setRenderHint(QPainter.Antialiasing)
-
         fill = QColor(_HOVER_FILL_COLOR)
         fill.setAlpha(55)
         painter.setBrush(QBrush(fill))
         painter.setPen(QPen(QColor(_HOVER_BORDER_COLOR), 2, Qt.DashLine))
-        painter.drawRoundedRect(rect, 8, 8)
-
+        painter.drawRoundedRect(rect, UiStyles.CARD_RADIUS, UiStyles.CARD_RADIUS)
         painter.restore()
 
     def _draw_drop_indicator(self, painter: QPainter) -> None:
         if self._drop_index == -1 or self._drop_x < 0:
             return
-
         x = self._drop_x
         y1 = self._drop_y_top
         y2 = self._drop_y_bot
         r = _DIAMOND_R
         color = QColor(_LINE_COLOR)
-
         painter.save()
         painter.setRenderHint(QPainter.Antialiasing)
-
         pen = QPen(color, _LINE_WIDTH, Qt.SolidLine, Qt.RoundCap)
         painter.setPen(pen)
         painter.drawLine(x, y1 + r, x, y2 - r)
-
         painter.setPen(Qt.NoPen)
         painter.setBrush(QBrush(color))
-
         painter.drawPolygon(QPolygon([
             QPoint(x, y1),
             QPoint(x + r, y1 + r),
@@ -435,7 +438,6 @@ class PageListView(QListView):
             QPoint(x, y2),
             QPoint(x - r, y2 - r),
         ]))
-
         painter.restore()
 
     # ── Qt 拖放事件 ────────────────────────────────────────────────
@@ -450,14 +452,11 @@ class PageListView(QListView):
     def dragMoveEvent(self, event: QDragMoveEvent):
         mime = event.mimeData()
         pos = event.position().toPoint()
-
         self._maybe_auto_scroll(pos)
-
         if mime.hasUrls():
             self._reset_drop_indicator()
             event.acceptProposedAction()
             return
-
         if mime.hasFormat("application/x-pagemove"):
             idx, x, yt, yb, hover_row = self._get_target_drop_info(pos)
             self._drop_index = idx
@@ -468,7 +467,6 @@ class PageListView(QListView):
             event.acceptProposedAction()
             self.viewport().update()
             return
-
         super().dragMoveEvent(event)
 
     def dragLeaveEvent(self, event):
@@ -477,7 +475,6 @@ class PageListView(QListView):
 
     def dropEvent(self, event: QDropEvent):
         mime = event.mimeData()
-
         if mime.hasUrls():
             files = [
                 url.toLocalFile()
@@ -489,10 +486,8 @@ class PageListView(QListView):
                 event.acceptProposedAction()
             else:
                 event.ignore()
-
             self._reset_drop_indicator()
             return
-
         if mime.hasFormat("application/x-pagemove"):
             target = self._drop_index
             if target != -1:
@@ -510,10 +505,8 @@ class PageListView(QListView):
                     event.ignore()
             else:
                 event.ignore()
-
             self._reset_drop_indicator()
             return
-
         super().dropEvent(event)
         self._reset_drop_indicator()
 
