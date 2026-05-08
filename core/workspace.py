@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Iterable, Sequence
 
@@ -15,6 +16,8 @@ from .models import (
 )
 from .protocols import PdfBackend
 
+logger = logging.getLogger(__name__)
+
 
 class WorkspaceManager:
     def __init__(self, backend: PdfBackend, thumbnail_dir: Path):
@@ -26,53 +29,70 @@ class WorkspaceManager:
         self._inspection_cache: dict[str, PdfInspectionResult] = {}
         self.pages: list[PageRef] = []
 
-    def open_pdfs(self, paths: Iterable[str | Path]) -> list[str]:
+    def open_pdfs(
+        self, paths: Iterable[str | Path]
+    ) -> tuple[list[str], list[Path]]:
+        """開啟多個 PDF 檔案。
+
+        每個檔案獨立 try/except，單一損壞不中斷其餘批次。
+
+        Returns:
+            (added_doc_ids, failed_paths)
+            - added_doc_ids: 成功載入的文件 ID 清單
+            - failed_paths:  載入失敗的路徑清單（可用於 UI 提示）
+        """
         added_doc_ids: list[str] = []
+        failed_paths: list[Path] = []
+
         pending_source_pdfs: dict[str, SourcePdf] = {}
         pending_inspections: dict[str, PdfInspectionResult] = {}
         pending_pages: list[PageRef] = []
 
         for raw_path in paths:
             path = Path(raw_path)
-            inspected = self.backend.inspect_pdf(path)
-            doc_id = new_id()
+            try:
+                inspected = self.backend.inspect_pdf(path)
+                doc_id = new_id()
 
-            added_doc_ids.append(doc_id)
-            pending_inspections[doc_id] = inspected
-            pending_source_pdfs[doc_id] = SourcePdf(
-                doc_id=doc_id,
-                path=path,
-                page_count=inspected.page_count,
-                metadata=inspected.metadata,
-                page_labels=inspected.page_labels,
-                toc=inspected.toc,
-                attachments=inspected.attachments,
-                forms_present=inspected.forms_present,
-                encrypted=inspected.encrypted,
-            )
-
-            expanded_labels = self._expand_labels(
-                inspected.page_count,
-                inspected.page_labels or [],
-            )
-            rotations = list(inspected.page_rotations or [0] * inspected.page_count)
-
-            for page_index in range(inspected.page_count):
-                pending_pages.append(
-                    PageRef(
-                        page_id=new_id(),
-                        source_doc_id=doc_id,
-                        source_path=path,
-                        source_page_index=page_index,
-                        source_page_label=expanded_labels[page_index],
-                        base_rotation=rotations[page_index] if page_index < len(rotations) else 0,
-                    )
+                added_doc_ids.append(doc_id)
+                pending_inspections[doc_id] = inspected
+                pending_source_pdfs[doc_id] = SourcePdf(
+                    doc_id=doc_id,
+                    path=path,
+                    page_count=inspected.page_count,
+                    metadata=inspected.metadata,
+                    page_labels=inspected.page_labels,
+                    toc=inspected.toc,
+                    attachments=inspected.attachments,
+                    forms_present=inspected.forms_present,
+                    encrypted=inspected.encrypted,
                 )
+
+                expanded_labels = self._expand_labels(
+                    inspected.page_count,
+                    inspected.page_labels or [],
+                )
+                rotations = list(inspected.page_rotations or [0] * inspected.page_count)
+
+                for page_index in range(inspected.page_count):
+                    pending_pages.append(
+                        PageRef(
+                            page_id=new_id(),
+                            source_doc_id=doc_id,
+                            source_path=path,
+                            source_page_index=page_index,
+                            source_page_label=expanded_labels[page_index],
+                            base_rotation=rotations[page_index] if page_index < len(rotations) else 0,
+                        )
+                    )
+            except Exception as exc:
+                logger.warning("無法開啟 %s：%s", path, exc)
+                failed_paths.append(path)
 
         self._inspection_cache.update(pending_inspections)
         self.source_pdfs.update(pending_source_pdfs)
         self.pages.extend(pending_pages)
-        return added_doc_ids
+        return added_doc_ids, failed_paths
 
     def move_pages(self, indices: list[int], target_index: int) -> None:
         if not indices:
