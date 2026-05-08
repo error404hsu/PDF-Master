@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 from typing import List
 
-from PySide6.QtCore import Qt, QModelIndex, QThreadPool, QKeySequence
+from PySide6.QtCore import Qt, QModelIndex, QThreadPool
 from PySide6.QtGui import QFont, QDragEnterEvent, QDropEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
@@ -105,8 +105,6 @@ class MainWindow(QMainWindow):
 
     def refresh_view(self) -> None:
         """Presenter 要求重整縮圖時呼叫。"""
-        # model.refresh_all() 已在 Presenter 中呼叫；
-        # 此處僅做額外 UI 更新（如需要可擴充）
         self.update_status()
 
     def get_selected_rows(self) -> list[int]:
@@ -220,7 +218,6 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _connect_signals(self) -> None:
-        # 所有點擊事件連接至 presenter
         self.btn_add.clicked.connect(self.presenter.on_add_pdf)
         self.btn_add_folder.clicked.connect(self.presenter.on_add_folder)
         self.btn_undo.clicked.connect(self.presenter.undo)
@@ -260,7 +257,7 @@ class MainWindow(QMainWindow):
         )
 
     # ------------------------------------------------------------------
-    # 對應原 update_status — 由 View 自己更新按鈕狀態
+    # 狀態與按鈕更新
     # ------------------------------------------------------------------
 
     def update_status(self, *args) -> None:
