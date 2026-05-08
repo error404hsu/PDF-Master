@@ -119,8 +119,9 @@ class PyMuPdfBackend:
 
             info_by_path = {Path(info.path): info for info in source_info}
 
-            if getattr(options, "keep_metadata", False):
-                policy = getattr(options, "metadata_policy", "first_pdf")
+            # 直接使用 ExportOptions dataclass 屬性，移除不安全的 getattr()
+            if options.keep_metadata:
+                policy = options.metadata_policy
                 if policy == "empty":
                     self._apply_metadata(out_doc, {})
                 else:
@@ -133,7 +134,7 @@ class PyMuPdfBackend:
                     if picked is not None:
                         self._apply_metadata(out_doc, dict(picked.metadata or {}))
 
-            if getattr(options, "keep_page_labels", False):
+            if options.keep_page_labels:
                 self._apply_page_labels(out_doc, pages)
 
             out_doc.save(output_path, garbage=3, deflate=True)
@@ -148,7 +149,8 @@ class PyMuPdfBackend:
             out_doc.close()
 
     def _page_rotations(self, doc) -> list[int]:
-        return [doc.load_page(i).rotation for i in range(doc.page_count)]
+        # 使用列表推导式取代 N+1 load_page 迴圈
+        return [page.rotation for page in doc]
 
     def _extract_attachments(self, doc) -> list[str]:
         try:
@@ -183,16 +185,15 @@ class PyMuPdfBackend:
 
     def _apply_page_labels(self, out_doc, pages: list[ExportPage]) -> None:
         try:
-            labels = []
-            for page_index, export_page in enumerate(pages):
-                labels.append(
-                    {
-                        "startpage": page_index,
-                        "prefix": export_page.source_page_label or "",
-                        "style": "",
-                        "firstpagenum": 1,
-                    }
-                )
+            labels = [
+                {
+                    "startpage": page_index,
+                    "prefix": export_page.source_page_label or "",
+                    "style": "",
+                    "firstpagenum": 1,
+                }
+                for page_index, export_page in enumerate(pages)
+            ]
             out_doc.set_page_labels(labels)
         except Exception:
             pass
