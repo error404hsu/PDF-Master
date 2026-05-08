@@ -21,123 +21,42 @@
 | `.webp` | 現代網頁圖片 |
 | `.gif` | 取靜態幀轉換 |
 
-### 實作指引
+### 實作狀態
 
-#### Step 1 — `core/models.py`：新增 `ImageInspectionResult`
+- `✅ 已完成` **Step 1 — `core/models.py`：新增 `ImageInspectionResult`**
+  - `@dataclass(slots=True, frozen=True)`，欄位：`path / page_count / width_px / height_px / format / encrypted`
+  - `page_count >= 1` 驗證
 
-```python
-@dataclass(slots=True, frozen=True)
-class ImageInspectionResult:
-    path: Path
-    page_count: int          # 單張圖片 = 1，多頁 TIFF = 幀數
-    width_px: int
-    height_px: int
-    format: str              # "jpeg" / "png" / "tiff" 等
-    encrypted: bool = False  # 圖片不加密，保留為統一介面
+- `✅ 已完成` **Step 2 — `core/protocols.py`：`PdfBackend` 新增 `inspect_image()`**
+  - 回傳 `ImageInspectionResult`；多頁 TIFF 的 `page_count > 1`
 
-    def __post_init__(self):
-        object.__setattr__(self, "path", Path(self.path))
-        if self.page_count < 1:
-            raise ValueError("page_count must be >= 1")
-```
+- `✅ 已完成` **Step 3 — `adapters/pymupdf_backend.py`：實作 `inspect_image()`**
+  - `SUPPORTED_IMAGE_SUFFIXES` 常數定義
+  - 以 `fitz.open(path)` 讀取圖片並回傳寬高、格式、幀數
 
-#### Step 2 — `core/protocols.py`：`PdfBackend` 新增 `inspect_image()`
+- `✅ 已完成` **Step 4 — `core/workspace.py`：`open_files()` 統一入口**
+  - `IMAGE_SUFFIXES` 常數，自動路由至 `_open_image()` 或 `_open_pdf()`
+  - `open_pdfs()` 改為委派 `open_files()`，向後相容零破壞
+  - `_open_image()` 將多頁 TIFF 每幀展開為獨立 `PageRef`
 
-```python
-class PdfBackend(Protocol):
-    def inspect_pdf(self, path: Path) -> PdfInspectionResult: ...
+- `✅ 已完成` **Step 5 — `adapters/pymupdf_backend.py`：`_open_source_as_pdf()` 支援圖片**
+  - `render_thumbnail()` / `render_page_to_image()` / `export_pages()` 全部改用此方法
+  - 圖片先以 `convert_to_pdf()` 轉為 in-memory PDF，再進 PyMuPDF pipeline
 
-    def inspect_image(self, path: Path) -> ImageInspectionResult: ...
-    # 回傳圖片基本資訊；多頁 TIFF 的 page_count > 1
+- `✅ 已完成` **Step 6 — `gui/presenter.py`：檔案對話框加入圖片 filter**
+  - `_FILE_FILTER` 常數：`All Supported Files` / `PDF Files` / `Image Files` 三段
+  - `load_files()` 統一入口；`on_add_pdf` / `on_add_folder` 同步支援圖片格式
+  - `on_add_folder` 資料夾掃描擴展為 `_SUPPORTED_SUFFIXES`（含圖片）
 
-    def render_thumbnail(self, ...) -> Path: ...
-    def export_pages(self, ...) -> Path: ...
-```
+- `✅ 已完成` **測試補齊 — `tests/test_workspace.py`**
+  - `FakeBackend` 新增 `inspect_image()` 與 `image_catalog`
+  - JPG 單頁 → 正常產生 1 頁
+  - 多頁 TIFF → 正確展開對應幀數
+  - 混合 PDF + JPG → 頁序符合呼叫順序
+  - 損壞圖片 → 列入 `failed_paths`，不中斷其餘對象
+  - `open_pdfs()` 向後相容驗證
 
-#### Step 3 — `adapters/pymupdf_backend.py`：實作 `inspect_image()`
-
-```python
-SUPPORTED_IMAGE_SUFFIXES = frozenset(
-    {".jpg", ".jpeg", ".png", ".tiff", ".tif", ".bmp", ".webp", ".gif"}
-)
-
-def inspect_image(self, path: Path) -> ImageInspectionResult:
-    import fitz
-    path = Path(path)
-    with fitz.open(path) as doc:
-        page_count = doc.page_count
-        first_page = doc.load_page(0)
-        rect = first_page.rect
-        return ImageInspectionResult(
-            path=path,
-            page_count=page_count,
-            width_px=int(rect.width),
-            height_px=int(rect.height),
-            format=path.suffix.lstrip(".").lower(),
-        )
-```
-
-#### Step 4 — `core/workspace.py`：`open_files()` 取代 `open_pdfs()`
-
-```python
-IMAGE_SUFFIXES = frozenset(
-    {".jpg", ".jpeg", ".png", ".tiff", ".tif", ".bmp", ".webp", ".gif"}
-)
-
-def open_files(
-    self, paths: Iterable[str | Path]
-) -> tuple[list[str], list[Path]]:
-    added_ids: list[str] = []
-    failed: list[Path] = []
-    for raw_path in paths:
-        path = Path(raw_path)
-        try:
-            if path.suffix.lower() in IMAGE_SUFFIXES:
-                ids = self._open_image(path)
-            else:
-                ids = self._open_pdf(path)
-            added_ids.extend(ids)
-        except Exception:
-            failed.append(path)
-    return added_ids, failed
-```
-
-#### Step 5 — `adapters/pymupdf_backend.py`：`export_pages()` 支援圖片路徑
-
-```python
-def _open_source_as_pdf(self, source_path: Path):
-    suffix = source_path.suffix.lower()
-    if suffix in SUPPORTED_IMAGE_SUFFIXES:
-        img_doc = self.fitz.open(source_path)
-        pdf_bytes = img_doc.convert_to_pdf()
-        img_doc.close()
-        return self.fitz.open("pdf", pdf_bytes)
-    return self.fitz.open(source_path)
-```
-
-#### Step 6 — `gui/presenter.py`：`on_add_pdf` 檔案選擇加入圖片 filter
-
-```python
-filters = "All Supported Files (*.pdf *.jpg *.jpeg *.png *.tif *.tiff *.bmp *.webp *.gif);;PDF Files (*.pdf);;Image Files (*.jpg *.jpeg *.png *.tif *.tiff *.bmp *.webp *.gif)"
-```
-
-### 測試項目
-
-- `open_files()` 傳入 JPG 應正常產生一頁
-- `open_files()` 傳入多頁 TIFF 應產生對應頁數
-- 混入 PDF + JPG 再匯出，頁序應和工作區順序一致
-- 損壞圖片在 `open_files()` 中應列入 `failed_paths`，不中斷其餘對象
-
-### 相關檔案
-
-```
-core/models.py           ← 新增 ImageInspectionResult
-core/protocols.py        ← 新增 inspect_image()
-core/workspace.py        ← open_files() 取代 open_pdfs()
-adapters/pymupdf_backend.py  ← inspect_image() + _open_source_as_pdf()
-gui/presenter.py         ← 檔案對話框 filter
-tests/test_workspace.py  ← 圖片相關測試案例
-```
+  - commit: `feat(image-to-pdf): 完整實作圖片轉 PDF 功能`
 
 ---
 
@@ -203,6 +122,7 @@ tests/test_workspace.py  ← 圖片相關測試案例
 - `✅ 已完成` **`_expand_labels()` 單元測試** — 羅馬字 R/r、字母 A/a、純前置、多段規則、缺 startpage、越界等 14 個案例
 - `✅ 已完成` **新增 `test_export_service.py`** — ExportService / ExportOptions / export_selected / can_export 完整覆蓋
 - `✅ 已完成` **`open_pdfs()` tuple 回傳測試** — 成功 / 部分失敗 / 全失敗 / 空輸入 四情境
+- `✅ 已完成` **圖片轉 PDF 測試** — JPG 單頁 / 多頁 TIFF / 混合 PDF+圖片 / 損壞圖片隔離 / open_pdfs 向後相容
 - `📌 規劃中` **引入 `pytest` + `pytest-cov`，目標行覆蓋率 ≥ 80%**
 
 ---
@@ -276,3 +196,11 @@ tests/test_workspace.py  ← 圖片相關測試案例
   - 全套測試補齊（ExportOptions / WorkspaceManager 邊界 / _expand_labels / test_export_service / open_pdfs tuple）
   - CI/CD（`.github/workflows/ci.yml`）：pytest + ruff + mypy，Python 3.11/3.12 matrix
   - 縮圖載入失敗顯示修正：FAILED 狀態改以紅色警告文字呈現
+- **圖片轉 PDF 完成（2026-05-08）**：
+  - `ImageInspectionResult` dataclass（`core/models.py`）
+  - `PdfBackend.inspect_image()` Protocol 方法（`core/protocols.py`）
+  - `open_files()` 統一入口 + `_open_pdf()` / `_open_image()` 路由（`core/workspace.py`）
+  - `inspect_image()` + `_open_source_as_pdf()` 實作（`adapters/pymupdf_backend.py`）
+  - Presenter `load_files()` + 檔案對話框圖片 filter（`gui/presenter.py`）
+  - 圖片相關測試案例 × 5（`tests/test_workspace.py`）
+  - 支援格式：JPG / PNG / TIFF（含多頁）/ BMP / WebP / GIF
