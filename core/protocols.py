@@ -15,7 +15,7 @@ class PdfBackend(Protocol):
         page_index: int,
         final_rotation: int,
         output_path: Path,
-        zoom: float = 0.2,
+        zoom: float = 0.4,
     ) -> Path: ...
 
     def export_pages(

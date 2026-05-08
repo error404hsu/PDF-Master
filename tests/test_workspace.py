@@ -29,13 +29,14 @@ class FakeBackend:
                 metadata={"title": "Doc B", "author": "Tester B"},
                 page_labels=[{"startpage": 0, "prefix": "B-", "style": "D", "firstpagenum": 1}],
                 page_rotations=[0, 90],
+                encrypted=True,
             ),
         }
 
     def inspect_pdf(self, path: Path) -> PdfInspectionResult:
         return self.catalog[Path(path)]
 
-    def render_thumbnail(self, source_path: Path, page_index: int, final_rotation: int, output_path: Path, zoom: float = 0.2) -> Path:
+    def render_thumbnail(self, source_path: Path, page_index: int, final_rotation: int, output_path: Path, zoom: float = 0.4) -> Path:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(json.dumps({
             "source_path": str(source_path),
@@ -117,6 +118,19 @@ class WorkspaceManagerTests(unittest.TestCase):
         data = json.loads(out.read_text(encoding="utf-8"))
         self.assertEqual(data["final_rotation"], 270)
 
+    def test_render_thumbnail_to_disk_leaves_thumb_path_unset(self):
+        page = self.workspace.pages[0]
+        self.assertIsNone(page.thumb_path)
+        path = self.workspace.render_thumbnail_to_disk(
+            page_id=page.page_id,
+            source_path=page.source_path,
+            source_page_index=page.source_page_index,
+            final_rotation=page.effective_rotation,
+            zoom=0.2,
+        )
+        self.assertTrue(path.exists())
+        self.assertIsNone(page.thumb_path)
+
     def test_export_plan_follows_workspace_order(self):
         self.workspace.move_pages([3], 1)
         self.workspace.remove_pages([4])
@@ -130,6 +144,22 @@ class WorkspaceManagerTests(unittest.TestCase):
             [("A.pdf", 0, 0), ("B.pdf", 0, 90), ("A.pdf", 1, 0), ("A.pdf", 2, 0)],
         )
         self.assertFalse(payload["options"]["keep_bookmarks"])
+
+    def test_encrypted_used_sources_all_pages(self):
+        enc = self.workspace.encrypted_used_sources()
+        self.assertEqual(len(enc), 1)
+        self.assertEqual(enc[0].path, Path("B.pdf"))
+
+    def test_encrypted_used_sources_respects_row_subset(self):
+        enc = self.workspace.encrypted_used_sources([0, 1, 2])
+        self.assertEqual(enc, [])
+
+    def test_export_metadata_policy_last_pdf_option(self):
+        opts = ExportOptions(keep_metadata=True, metadata_policy="last_pdf", keep_bookmarks=False)
+        service = ExportService(self.workspace)
+        out = service.export(Path(self.temp_dir.name) / "meta.json", opts)
+        payload = json.loads(out.read_text(encoding="utf-8"))
+        self.assertEqual(payload["options"]["metadata_policy"], "last_pdf")
 
 
 if __name__ == "__main__":

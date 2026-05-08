@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections import defaultdict
 from pathlib import Path
 
 from core.exceptions import PdfBackendUnavailableError
@@ -15,33 +14,25 @@ class PyMuPdfBackend:
             raise PdfBackendUnavailableError(
                 "PyMuPDF (fitz) is not installed. Install it with: pip install pymupdf"
             ) from exc
+
         self.fitz = fitz
 
     def inspect_pdf(self, path: Path) -> PdfInspectionResult:
-        with self.fitz.open(path) as doc:
-            attachments = []
-            try:
-                names = doc.embfile_names()
-                attachments = list(names or [])
-            except Exception:
-                attachments = []
+        pdf_path = Path(path)
 
-            forms_present = False
-            try:
-                forms_present = bool(doc.is_form_pdf)
-            except Exception:
-                forms_present = False
-
-            page_rotations = [
-                doc.load_page(i).rotation for i in range(doc.page_count)
-            ]
+        with self.fitz.open(pdf_path) as doc:
+            attachments = self._extract_attachments(doc)
+            forms_present = self._extract_forms_present(doc)
+            toc = self._extract_toc(doc)
+            page_labels = self._extract_page_labels(doc)
+            page_rotations = self._page_rotations(doc)
 
             return PdfInspectionResult(
-                path=Path(path),
+                path=pdf_path,
                 page_count=doc.page_count,
                 metadata=dict(doc.metadata or {}),
-                page_labels=doc.get_page_labels() or [],
-                toc=[],
+                page_labels=page_labels,
+                toc=toc,
                 attachments=attachments,
                 forms_present=forms_present,
                 encrypted=bool(doc.needs_pass),
@@ -54,15 +45,23 @@ class PyMuPdfBackend:
         page_index: int,
         final_rotation: int,
         output_path: Path,
-        zoom: float = 0.2,
+        zoom: float = 0.4,
     ) -> Path:
+        if zoom <= 0:
+            raise ValueError("zoom must be greater than 0")
+
+        source_path = Path(source_path)
+        output_path = Path(output_path)
+
         with self.fitz.open(source_path) as doc:
             page = doc.load_page(page_index)
             matrix = self.fitz.Matrix(zoom, zoom).prerotate(final_rotation)
             pix = page.get_pixmap(matrix=matrix, alpha=False)
+
             output_path.parent.mkdir(parents=True, exist_ok=True)
             pix.save(output_path)
-            return output_path
+
+        return output_path
 
     def render_page_to_image(
         self,
@@ -71,7 +70,10 @@ class PyMuPdfBackend:
         zoom: float = 2.0,
         rotation: int = 0,
     ) -> bytes:
-        with self.fitz.open(source_path) as doc:
+        if zoom <= 0:
+            raise ValueError("zoom must be greater than 0")
+
+        with self.fitz.open(Path(source_path)) as doc:
             page = doc.load_page(page_index)
             matrix = self.fitz.Matrix(zoom, zoom).prerotate(rotation)
             pix = page.get_pixmap(matrix=matrix, alpha=False)
@@ -84,65 +86,113 @@ class PyMuPdfBackend:
         options: ExportOptions,
         source_info: list[PdfInspectionResult],
     ) -> Path:
+        if not pages:
+            raise ValueError("pages must not be empty")
+
+        output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         out_doc = self.fitz.open()
-        info_by_path = {info.path: info for info in source_info}
-        groups: dict[Path, list[tuple[int, ExportPage]]] = defaultdict(list)
+        src_docs: dict[Path, object] = {}
 
-        for final_index, export_page in enumerate(pages):
-            groups[export_page.source_path].append((final_index, export_page))
+        try:
+            for export_page in pages:
+                source_path = Path(export_page.source_path)
+                src = src_docs.get(source_path)
+                if src is None:
+                    src = self.fitz.open(source_path)
+                    src_docs[source_path] = src
 
-        sorted_pages: list[ExportPage | None] = [None] * len(pages)
+                out_doc.insert_pdf(
+                    src,
+                    from_page=export_page.source_page_index,
+                    to_page=export_page.source_page_index,
+                )
 
-        for source_path, entries in groups.items():
-            entries = sorted(entries, key=lambda item: item[1].source_page_index)
-            with self.fitz.open(source_path) as src:
-                for final_index, export_page in entries:
-                    out_doc.insert_pdf(
-                        src,
-                        from_page=export_page.source_page_index,
-                        to_page=export_page.source_page_index,
+            if out_doc.page_count != len(pages):
+                raise RuntimeError("unexpected page count in export")
+
+            for final_index, export_page in enumerate(pages):
+                page = out_doc.load_page(final_index)
+                if page.rotation != export_page.final_rotation:
+                    page.set_rotation(export_page.final_rotation)
+
+            info_by_path = {Path(info.path): info for info in source_info}
+
+            if getattr(options, "keep_metadata", False):
+                policy = getattr(options, "metadata_policy", "first_pdf")
+                if policy == "empty":
+                    self._apply_metadata(out_doc, {})
+                else:
+                    anchor = (
+                        Path(pages[0].source_path)
+                        if policy == "first_pdf"
+                        else Path(pages[-1].source_path)
                     )
-                    sorted_pages[final_index] = export_page
+                    picked = info_by_path.get(anchor)
+                    if picked is not None:
+                        self._apply_metadata(out_doc, dict(picked.metadata or {}))
 
-        if any(item is None for item in sorted_pages):
+            if getattr(options, "keep_page_labels", False):
+                self._apply_page_labels(out_doc, pages)
+
+            out_doc.save(output_path, garbage=3, deflate=True)
+            return output_path
+
+        finally:
+            for src in src_docs.values():
+                try:
+                    src.close()
+                except Exception:
+                    pass
             out_doc.close()
-            raise RuntimeError("export assembly failed")
 
-        if len(sorted_pages) != len(pages):
-            out_doc.close()
-            raise RuntimeError("unexpected page count in export")
+    def _page_rotations(self, doc) -> list[int]:
+        return [doc.load_page(i).rotation for i in range(doc.page_count)]
 
-        for final_index, export_page in enumerate(pages):
-            page = out_doc.load_page(final_index)
-            if page.rotation != export_page.final_rotation:
-                page.set_rotation(export_page.final_rotation)
+    def _extract_attachments(self, doc) -> list[str]:
+        try:
+            names = doc.embfile_names()
+            return list(names or [])
+        except Exception:
+            return []
 
-        primary = info_by_path.get(pages[0].source_path)
-        if primary and options.keep_metadata:
-            try:
-                out_doc.set_metadata(primary.metadata)
-            except Exception:
-                pass
+    def _extract_forms_present(self, doc) -> bool:
+        try:
+            return bool(doc.is_form_pdf)
+        except Exception:
+            return False
 
-        if options.keep_page_labels:
-            try:
-                labels = []
-                for page_index, export_page in enumerate(pages):
-                    labels.append(
-                        {
-                            "startpage": page_index,
-                            "prefix": export_page.source_page_label,
-                            "style": "",
-                            "firstpagenum": 1,
-                        }
-                    )
-                out_doc.set_page_labels(labels)
-            except Exception:
-                pass
+    def _extract_toc(self, doc) -> list:
+        try:
+            return doc.get_toc() or []
+        except Exception:
+            return []
 
-        # keep_bookmarks is intentionally off by default per project requirement.
-        out_doc.save(output_path, garbage=3, deflate=True)
-        out_doc.close()
-        return output_path
+    def _extract_page_labels(self, doc) -> list[dict]:
+        try:
+            return doc.get_page_labels() or []
+        except Exception:
+            return []
+
+    def _apply_metadata(self, out_doc, metadata: dict) -> None:
+        try:
+            out_doc.set_metadata(metadata)
+        except Exception:
+            pass
+
+    def _apply_page_labels(self, out_doc, pages: list[ExportPage]) -> None:
+        try:
+            labels = []
+            for page_index, export_page in enumerate(pages):
+                labels.append(
+                    {
+                        "startpage": page_index,
+                        "prefix": export_page.source_page_label or "",
+                        "style": "",
+                        "firstpagenum": 1,
+                    }
+                )
+            out_doc.set_page_labels(labels)
+        except Exception:
+            pass

@@ -2,11 +2,21 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 import uuid
 
+MetadataPolicy = Literal["first_pdf", "last_pdf", "empty"]
 
-@dataclass(slots=True)
+
+def new_id() -> str:
+    return str(uuid.uuid4())
+
+
+def _normalize_rotation(value: int) -> int:
+    return int(value) % 360
+
+
+@dataclass(slots=True, frozen=True)
 class SourcePdf:
     doc_id: str
     path: Path
@@ -17,6 +27,13 @@ class SourcePdf:
     attachments: list[str] = field(default_factory=list)
     forms_present: bool = False
     encrypted: bool = False
+
+    def __post_init__(self):
+        object.__setattr__(self, "path", Path(self.path))
+        if not self.doc_id:
+            raise ValueError("doc_id must not be empty")
+        if self.page_count < 0:
+            raise ValueError("page_count must be >= 0")
 
 
 @dataclass(slots=True)
@@ -30,12 +47,36 @@ class PageRef:
     rotation_delta: int = 0
     thumb_path: Path | None = None
 
+    def __post_init__(self):
+        self.source_path = Path(self.source_path)
+
+        if self.thumb_path is not None:
+            self.thumb_path = Path(self.thumb_path)
+
+        if not self.page_id:
+            raise ValueError("page_id must not be empty")
+        if not self.source_doc_id:
+            raise ValueError("source_doc_id must not be empty")
+        if self.source_page_index < 0:
+            raise ValueError("source_page_index must be >= 0")
+
+        self.base_rotation = _normalize_rotation(self.base_rotation)
+        self.rotation_delta = _normalize_rotation(self.rotation_delta)
+
     @property
     def effective_rotation(self) -> int:
         return (self.base_rotation + self.rotation_delta) % 360
 
+    def clear_thumbnail(self) -> None:
+        self.thumb_path = None
 
-@dataclass(slots=True)
+    def rotate(self, angle: int) -> None:
+        if angle % 90 != 0:
+            raise ValueError("rotation angle must be a multiple of 90")
+        self.rotation_delta = (self.rotation_delta + angle) % 360
+
+
+@dataclass(slots=True, frozen=True)
 class PdfInspectionResult:
     path: Path
     page_count: int
@@ -47,8 +88,15 @@ class PdfInspectionResult:
     encrypted: bool = False
     page_rotations: list[int] = field(default_factory=list)
 
+    def __post_init__(self):
+        object.__setattr__(self, "path", Path(self.path))
+        if self.page_count < 0:
+            raise ValueError("page_count must be >= 0")
+        normalized_rotations = [_normalize_rotation(value) for value in self.page_rotations]
+        object.__setattr__(self, "page_rotations", normalized_rotations)
 
-@dataclass(slots=True)
+
+@dataclass(slots=True, frozen=True)
 class ExportPage:
     source_path: Path
     source_page_index: int
@@ -56,23 +104,39 @@ class ExportPage:
     source_doc_id: str
     source_page_label: str = ""
 
+    def __post_init__(self):
+        object.__setattr__(self, "source_path", Path(self.source_path))
+        object.__setattr__(self, "final_rotation", _normalize_rotation(self.final_rotation))
 
-@dataclass(slots=True)
+        if not self.source_doc_id:
+            raise ValueError("source_doc_id must not be empty")
+        if self.source_page_index < 0:
+            raise ValueError("source_page_index must be >= 0")
+
+
+@dataclass(slots=True, frozen=True)
 class ExportOptions:
     keep_metadata: bool = True
     keep_page_labels: bool = True
     keep_attachments: bool = True
     keep_forms: bool = True
     keep_bookmarks: bool = False
-    metadata_policy: str = "first_pdf"
+    metadata_policy: MetadataPolicy = "first_pdf"
+
+    def __post_init__(self):
+        allowed = {"first_pdf", "last_pdf", "empty"}
+        if self.metadata_policy not in allowed:
+            raise ValueError(f"metadata_policy must be one of {sorted(allowed)}")
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, frozen=True)
 class WorkspaceSnapshot:
     source_count: int
     page_count: int
     pages: list[dict[str, Any]]
 
-
-def new_id() -> str:
-    return str(uuid.uuid4())
+    def __post_init__(self):
+        if self.source_count < 0:
+            raise ValueError("source_count must be >= 0")
+        if self.page_count < 0:
+            raise ValueError("page_count must be >= 0")
