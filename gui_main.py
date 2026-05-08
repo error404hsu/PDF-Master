@@ -4,6 +4,14 @@ Phase 2 MVP 重構：
   - MainWindow 實作 IMainView Protocol
   - 所有按鈕 Signal 連接至 self.presenter.*
   - 本檔不含任何業務邏輯（無 workspace 操作）
+
+UI/UX 改進（feat commit）：
+  - Footer 分離狀態列（左）與快捷鍵提示（右）
+  - Empty State 引導畫面（無頁面時顯示）
+  - Toast 非阻塞通知（取代非嚴重 QMessageBox）
+  - Header 加入進度條（載入時顯示）
+  - PageCardDelegate 來源色帶（多檔區分）
+  - PageListView 右鍵情境選單
 """
 from __future__ import annotations
 
@@ -21,6 +29,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QProgressBar,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -40,6 +49,8 @@ from gui.models import PdfPageModel, SnapshotHistory
 from gui.presenter import MainPresenter
 from gui.styles import UiStyles
 from gui.views import PageCardDelegate, PageListView
+from gui.toast import Toast
+from gui.empty_state import EmptyStateOverlay
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s | %(name)s | %(message)s")
 logger = logging.getLogger("gui_main")
@@ -60,16 +71,12 @@ class MainWindow(QMainWindow):
 
         self.thumb_path = Path("./.thumbnails")
 
-        # 建立服務層對象：
-        # WorkspaceManager 不再需要 thumbnail_dir 參數
         self.backend = PyMuPdfBackend()
         self.workspace = WorkspaceManager(self.backend)
-        # ThumbnailService 接管縮圖目錄生命週期
         self.thumb_service = ThumbnailService(self.workspace, self.thumb_path)
         self.export_service = ExportService(self.workspace)
 
         self.history = SnapshotHistory(max_entries=20)
-
         self.model = PdfPageModel(self.workspace, self.thumb_service)
 
         self.presenter = MainPresenter(
@@ -95,8 +102,12 @@ class MainWindow(QMainWindow):
         from PySide6.QtWidgets import QMessageBox
         QMessageBox.critical(self, title, msg)
 
+    def show_toast(self, msg: str, kind: str = "info") -> None:
+        """非阻塞 Toast 通知（kind: info / error / success）。"""
+        Toast.show(self, msg, kind)
+
     def set_status(self, text: str) -> None:
-        self.footer.setText(text)
+        self.footer_status.setText(text)
         self._update_action_buttons()
         self._update_history_buttons()
 
@@ -110,6 +121,20 @@ class MainWindow(QMainWindow):
         return sorted(
             {idx.row() for idx in selection_model.selectedIndexes() if idx.isValid()}
         )
+
+    # ------------------------------------------------------------------
+    # 進度條控制（供 Presenter / Worker 呼叫）
+    # ------------------------------------------------------------------
+
+    def show_progress(self, value: int = 0, maximum: int = 0) -> None:
+        """顯示進度條；maximum=0 代表不確定進度（跑馬燈）。"""
+        self.progress_bar.setMaximum(maximum)
+        self.progress_bar.setValue(value)
+        self.progress_bar.setVisible(True)
+
+    def hide_progress(self) -> None:
+        """隱藏進度條。"""
+        self.progress_bar.setVisible(False)
 
     # ------------------------------------------------------------------
     # 純 UI 建構
@@ -126,19 +151,54 @@ class MainWindow(QMainWindow):
         header = self._build_header()
         main_layout.addWidget(header)
 
-        self.view = PageListView()
+        # 進度條（緊貼 header 下方，預設隱藏）
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setFixedHeight(4)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setStyleSheet(UiStyles.PROGRESS_BAR)
+        self.progress_bar.setVisible(False)
+        main_layout.addWidget(self.progress_bar)
+
+        # 頁面列表（含 Empty State overlay）
+        list_container = QWidget()
+        list_container.setObjectName("list_container")
+        list_layout = QVBoxLayout(list_container)
+        list_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.view = PageListView(list_container)
         self.view.setModel(self.model)
         self.view.setItemDelegate(PageCardDelegate())
         self.view.setStyleSheet(UiStyles.LIST_VIEW)
-        main_layout.addWidget(self.view)
+        list_layout.addWidget(self.view)
 
-        self.footer = QLabel(
-            " 辦公室合併：可批次加入資料夾內 PDF | Ctrl+A 全選 | Del 刪除 | "
-            "Ctrl+Shift+E 匯出選取 | 雙擊預覽 | 拖曳排序"
+        # Empty State 疊加層
+        self.empty_overlay = EmptyStateOverlay(list_container)
+        self.empty_overlay.setVisible(True)
+
+        main_layout.addWidget(list_container, stretch=1)
+
+        # Footer：左側狀態 + 右側快捷鍵提示
+        footer_widget = QWidget()
+        footer_widget.setFixedHeight(32)
+        footer_widget.setStyleSheet(
+            "background-color: white; border-top: 1px solid #e2e8f0;"
         )
-        self.footer.setFixedHeight(32)
-        self.footer.setStyleSheet(UiStyles.FOOTER)
-        main_layout.addWidget(self.footer)
+        footer_layout = QHBoxLayout(footer_widget)
+        footer_layout.setContentsMargins(16, 0, 16, 0)
+        footer_layout.setSpacing(0)
+
+        self.footer_status = QLabel(" 總計 0 頁")
+        self.footer_status.setStyleSheet(UiStyles.FOOTER)
+
+        self.footer_hint = QLabel(
+            "Ctrl+A 全選 ｜ Del 刪除 ｜ Ctrl+Z 復原 ｜ 雙擊預覽 ｜ 拖曳排序"
+        )
+        self.footer_hint.setStyleSheet(UiStyles.FOOTER_HINT)
+
+        footer_layout.addWidget(self.footer_status)
+        footer_layout.addStretch()
+        footer_layout.addWidget(self.footer_hint)
+        main_layout.addWidget(footer_widget)
 
     def _build_header(self) -> QFrame:
         header = QFrame()
@@ -231,6 +291,13 @@ class MainWindow(QMainWindow):
         self.view.pages_reordered.connect(self.presenter.on_pages_reordered)
         self.view.pdf_files_dropped.connect(self.presenter.load_pdfs)
 
+        # 右鍵選單信號連接
+        self.view.context_rotate_left.connect(lambda: self.presenter.on_rotate_pages(-90))
+        self.view.context_rotate_180.connect(lambda: self.presenter.on_rotate_pages(180))
+        self.view.context_rotate_right.connect(lambda: self.presenter.on_rotate_pages(90))
+        self.view.context_delete.connect(self.presenter.on_delete_pages)
+        self.view.context_export_selected.connect(self.presenter.on_export_selected_pdf)
+
         selection_model = self.view.selectionModel()
         if selection_model is not None:
             selection_model.selectionChanged.connect(self.update_status)
@@ -261,7 +328,13 @@ class MainWindow(QMainWindow):
     def update_status(self, *args: object) -> None:
         total = self.model.rowCount()
         selected = len(self.get_selected_rows())
-        self.footer.setText(f" 總計 {total} 頁 | 已選取 {selected} 頁")
+        # 更新左側狀態文字
+        if total == 0:
+            self.footer_status.setText(" 尚無頁面")
+        else:
+            self.footer_status.setText(f" 總計 {total} 頁 | 已選取 {selected} 頁")
+        # 控制 Empty State 顯示
+        self.empty_overlay.setVisible(total == 0)
         self._update_action_buttons()
         self._update_history_buttons()
 

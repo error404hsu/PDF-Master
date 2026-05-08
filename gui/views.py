@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QStyle,
     QAbstractItemView,
     QMessageBox,
+    QMenu,
 )
 from PySide6.QtCore import (
     Qt,
@@ -27,9 +28,25 @@ from PySide6.QtGui import (
 )
 
 from gui.models import PAGE_ROLE, THUMB_STATE_ROLE, THUMB_ERROR_ROLE, ThumbState
-from gui.styles import UiStyles
+from gui.styles import UiStyles, SOURCE_COLORS
 
 logger = logging.getLogger("gui.views")
+
+# 全域來源 PDF → 色帶顏色對應表
+_source_color_cache: dict[str, str] = {}
+
+
+def _get_source_color(source_pdf: str) -> str:
+    """依來源 PDF 路徑分配固定顏色（最多 12 色循環）。"""
+    if source_pdf not in _source_color_cache:
+        idx = len(_source_color_cache) % len(SOURCE_COLORS)
+        _source_color_cache[source_pdf] = SOURCE_COLORS[idx]
+    return _source_color_cache[source_pdf]
+
+
+def clear_source_colors() -> None:
+    """清除色帶對應表（重新載入 PDF 時呼叫）。"""
+    _source_color_cache.clear()
 
 
 class PageCardDelegate(QStyledItemDelegate):
@@ -47,7 +64,7 @@ class PageCardDelegate(QStyledItemDelegate):
         painter.setRenderHint(QPainter.SmoothPixmapTransform)
 
         rect = option.rect.adjusted(6, 6, -6, -6)
-        thumb_area = rect.adjusted(10, 10, -10, -50)
+        thumb_area = rect.adjusted(10, 14, -10, -50)  # 上移 4px 為色帶留空間
         is_selected = bool(option.state & QStyle.State_Selected)
 
         if is_selected:
@@ -59,6 +76,16 @@ class PageCardDelegate(QStyledItemDelegate):
 
         painter.drawRoundedRect(rect, 8, 8)
 
+        # ── 來源色帶（頂部 5px）──────────────────────────────────
+        source_pdf = getattr(page, "source_pdf", "") or ""
+        if source_pdf:
+            band_color = _get_source_color(source_pdf)
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor(band_color))
+            band_rect = QRect(rect.x() + 1, rect.y() + 1, rect.width() - 2, 5)
+            painter.drawRoundedRect(band_rect, 3, 3)
+
+        # ── 縮圖區域 ─────────────────────────────────────────────
         if pixmap and not pixmap.isNull():
             scaled = pixmap.scaled(
                 thumb_area.size(),
@@ -72,7 +99,6 @@ class PageCardDelegate(QStyledItemDelegate):
             placeholder_rect = thumb_area.adjusted(8, 8, -8, -8)
 
             if thumb_state == ThumbState.FAILED:
-                # 失敗狀態：紅色邊框 + 警告背景
                 painter.setPen(QPen(QColor("#fca5a5"), 1))
                 painter.setBrush(QColor("#fff1f2"))
                 painter.drawRoundedRect(placeholder_rect, 6, 6)
@@ -84,7 +110,6 @@ class PageCardDelegate(QStyledItemDelegate):
                 painter.setFont(font)
                 painter.drawText(placeholder_rect, Qt.AlignCenter, "⚠ 縮圖失敗")
             else:
-                # 載入中：淡藍色佔位
                 painter.setPen(QPen(QColor("#dbeafe"), 1))
                 painter.setBrush(QColor("#f8fbff"))
                 painter.drawRoundedRect(placeholder_rect, 6, 6)
@@ -96,6 +121,7 @@ class PageCardDelegate(QStyledItemDelegate):
                 painter.setFont(font)
                 painter.drawText(placeholder_rect, Qt.AlignCenter, "載入中...")
 
+        # ── 頁碼標示 ──────────────────────────────────────────────
         painter.setPen(QColor(UiStyles.TEXT_MUTED))
         font = painter.font()
         font.setBold(False)
@@ -111,10 +137,8 @@ class PageCardDelegate(QStyledItemDelegate):
         painter.setFont(font)
         info = f"{page.source_page_label} | {page.effective_rotation}°"
         if thumb_state == ThumbState.FAILED:
-            # 失敗時底部資訊也用紅色提示
             painter.setPen(QColor("#dc2626"))
             if thumb_error:
-                # 擷取錯誤訊息前 30 字，避免卡片版面溢出
                 short_err = thumb_error[:30] + "..." if len(thumb_error) > 30 else thumb_error
                 info = f"{info} | {short_err}"
             else:
@@ -134,6 +158,12 @@ class PageCardDelegate(QStyledItemDelegate):
 class PageListView(QListView):
     pages_reordered = Signal(list, int)
     pdf_files_dropped = Signal(list)
+    # 右鍵選單動作信號
+    context_rotate_left = Signal()
+    context_rotate_180 = Signal()
+    context_rotate_right = Signal()
+    context_delete = Signal()
+    context_export_selected = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -152,8 +182,74 @@ class PageListView(QListView):
         self.setDefaultDropAction(Qt.MoveAction)
         self.setSelectionRectVisible(True)
 
+        # 啟用右鍵選單
+        self.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._show_context_menu)
+
         self._drop_index = -1
         self._drop_rect = QRect()
+
+    def _show_context_menu(self, pos: QPoint) -> None:
+        """顯示右鍵情境選單。"""
+        # 若點擊位置無頁面，直接返回
+        index = self.indexAt(pos)
+        if not index.isValid():
+            return
+
+        has_selection = bool(self.selectionModel().selectedIndexes())
+        if not has_selection:
+            return
+
+        menu = QMenu(self)
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: #ffffff;
+                border: 1px solid #e2e8f0;
+                border-radius: 6px;
+                padding: 4px;
+                font-size: 10pt;
+            }
+            QMenu::item {
+                padding: 6px 24px;
+                border-radius: 4px;
+                color: #1e293b;
+            }
+            QMenu::item:selected {
+                background-color: #eff6ff;
+                color: #1e40af;
+            }
+            QMenu::separator {
+                height: 1px;
+                background-color: #e2e8f0;
+                margin: 4px 8px;
+            }
+        """)
+
+        act_rot_l = menu.addAction("↺  左轉 90°")
+        act_rot_180 = menu.addAction("↕  轉 180°")
+        act_rot_r = menu.addAction("↻  右轉 90°")
+        menu.addSeparator()
+        act_delete = menu.addAction("🗑  刪除頁面")
+        act_delete.setEnabled(has_selection)
+        menu.addSeparator()
+        act_export_sel = menu.addAction("💾  匯出選取頁面")
+
+        for act in (act_rot_l, act_rot_180, act_rot_r):
+            act.setEnabled(has_selection)
+
+        chosen = menu.exec(self.viewport().mapToGlobal(pos))
+        if chosen == act_rot_l:
+            self.context_rotate_left.emit()
+        elif chosen == act_rot_180:
+            self.context_rotate_180.emit()
+        elif chosen == act_rot_r:
+            self.context_rotate_right.emit()
+        elif chosen == act_delete:
+            self.context_delete.emit()
+        elif chosen == act_export_sel:
+            self.context_export_selected.emit()
+
+    # ── 拖放輔助 ──────────────────────────────────────────────────
 
     def _reset_drop_indicator(self):
         self._drop_index = -1

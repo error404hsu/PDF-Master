@@ -1,5 +1,21 @@
 # 樣式常數模組 — 集中管理所有 QSS 字串與色票
 
+# 來源 PDF 群組色帶顏色（最多支援 12 個不同來源）
+SOURCE_COLORS = [
+    "#3b82f6",  # blue
+    "#10b981",  # emerald
+    "#f59e0b",  # amber
+    "#8b5cf6",  # violet
+    "#ef4444",  # red
+    "#06b6d4",  # cyan
+    "#f97316",  # orange
+    "#84cc16",  # lime
+    "#ec4899",  # pink
+    "#14b8a6",  # teal
+    "#a855f7",  # purple
+    "#64748b",  # slate
+]
+
 
 class UiStyles:
     WINDOW_BG = "#f8fafc"
@@ -98,4 +114,49 @@ class UiStyles:
     font-size: 10pt;
     padding-left: 20px;
     font-weight: normal;
+    """
+
+    FOOTER_HINT = """
+    background-color: white;
+    color: #94a3b8;
+    font-size: 9pt;
+    padding-right: 16px;
+    """
+
+    PROGRESS_BAR = """
+    QProgressBar {
+        border: none;
+        background-color: #e2e8f0;
+        border-radius: 2px;
+        height: 4px;
+        text-align: center;
+    }
+    QProgressBar::chunk {
+        background-color: #3b82f6;
+        border-radius: 2px;
+    }
+    """
+
+    TOAST_INFO = """
+        background-color: #1e293b;
+        color: white;
+        border-radius: 8px;
+        font-size: 10pt;
+        padding: 10px 20px;
+    """
+
+    TOAST_ERROR = """
+        background-color: #f43f5e;
+        color: white;
+        border-radius: 8px;
+        font-size: 10pt;
+        padding: 10px 20px;
+    """
+
+    TOAST_SUCCESS = """
+        background-color: #10b981;
+        color: white;
+        border-radius: 8px;
+        font-size: 10pt;
+        padding: 10px 20px;
     """
