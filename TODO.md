@@ -145,10 +145,11 @@ tests/test_workspace.py  ← 圖片相關測試案例
 
 ### 高優先度
 
-- `📌 規劃中` **錯誤隔離：`open_pdfs()` 批次處理改為逆檔 try/except**
-  - 目前任一 PDF 損壞就中斷整個批次
-  - 建議回傳 `(added_ids, failed_paths)` tuple，UI 層再核對失敗清單對用戶提示
+- `✅ 已完成` **錯誤隔離：`open_pdfs()` 批次處理改為逐檔 try/except**
+  - 每個檔案獨立 try/except，回傳 `(added_ids, failed_paths)` tuple
+  - UI 層可根據 `failed_paths` 對用戶彈出具體提示
   - 相關檔案：`core/workspace.py` `open_pdfs()`
+  - commit: fix(workspace): open_pdfs() 批次錯誤隔離
 
 - `✅ Phase 2 完成` **GUI 分層：MVP 介面解耦**
   - **Phase 1 完成**（`gui/` 套件已創建）
@@ -167,17 +168,20 @@ tests/test_workspace.py  ← 圖片相關測試案例
   - 目標結構：`views/`（純 UI 元件）、`controllers/`（業務橋接）
   - `core/` 保持完全無 PySide6 依賴
 
-- `📌 規劃中` **版本鎖定：新增 `requirements-lock.txt` 或改用 `pyproject.toml`**
-  - 目前 `requirements.txt` 將 `pymupdf>=1.24`、`PySide6>=6.6` 定義為最小版本限制
-  - 建議使用 `uv` 或 `pip-compile` 產生 lock file
+- `✅ 已完成` **版本鎖定：新增 `pyproject.toml`**
+  - 新增 `pyproject.toml`，使用 `pymupdf>=1.24,<2.0`、`PySide6>=6.6,<7.0` 上下界限制
+  - 包含 `[project.optional-dependencies]` dev 群組（pytest / ruff / mypy）
+  - 建議後續用 `uv lock` 或 `pip-compile` 產生完整 lock file
 
-- `📌 規劃中` **`export_pages()` 中 `getattr()` 安全拆除**
-  - `ExportOptions` 已是 `dataclass(frozen=True)`，可直接使用屬性名
+- `✅ 已完成` **`export_pages()` 中 `getattr()` 安全拆除**
+  - `ExportOptions` 已是 `dataclass(frozen=True)`，直接使用屬性名
+  - 同步修復 `_page_rotations()` N+1 問題，改為列表推導式
+  - commit: refactor(pymupdf): export_pages() 移除 getattr()
 
 ### 中優先度
 
-- `📌 規劃中` **`_page_rotations()` N+1 問題**
-  - 候選方案：`[page.rotation for page in doc]`
+- `✅ 已完成（含高優先度修復）` **`_page_rotations()` N+1 問題**
+  - 改為：`[page.rotation for page in doc]`
 
 - `📌 規劃中` **`WorkspaceManager` 縮圖目錄職責拆分**
   - `ThumbnailService` 應負責管理資料夾生命週期
@@ -254,3 +258,8 @@ tests/test_workspace.py  ← 圖片相關測試案例
 - **GUI 分層 Phase 1**：`gui/` 套件拆分（styles / workers / dialogs / models / views）
 - **GUI 分層 Phase 2**：MVP 介面解耦（interfaces / presenter）+ Presenter 單元測試
 - **修復** `gui_main.py` 重複 `QKeySequence` import（`QtCore` 移除，保留 `QtGui`）
+- **高優先度修復（2026-05-08）**：
+  - `open_pdfs()` 批次錯誤隔離（逐檔 try/except + failed_paths 回傳）
+  - `export_pages()` 移除 `getattr()`，改用 ExportOptions 直接屬性存取
+  - `_page_rotations()` N+1 問題修復（列表推導式）
+  - 新增 `pyproject.toml` 版本上下界鎖定 + dev 依賴群組
