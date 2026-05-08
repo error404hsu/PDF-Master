@@ -3,11 +3,15 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Protocol
 
-from .models import ExportOptions, ExportPage, PdfInspectionResult
+from .models import ExportOptions, ExportPage, ImageInspectionResult, PdfInspectionResult
 
 
 class PdfBackend(Protocol):
     def inspect_pdf(self, path: Path) -> PdfInspectionResult: ...
+
+    def inspect_image(self, path: Path) -> ImageInspectionResult:
+        """回傳圖片基本資訊；多頁 TIFF 的 page_count > 1。"""
+        ...
 
     def render_thumbnail(
         self,

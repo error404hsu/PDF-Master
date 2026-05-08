@@ -29,6 +29,18 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# 檔案對話框 filter（PDF + 所有支援圖片格式）
+_FILE_FILTER = (
+    "All Supported Files (*.pdf *.jpg *.jpeg *.png *.tif *.tiff *.bmp *.webp *.gif);;"
+    "PDF Files (*.pdf);;"
+    "Image Files (*.jpg *.jpeg *.png *.tif *.tiff *.bmp *.webp *.gif)"
+)
+
+# 資料夾掃描時納入的副檔名（小寫）
+_SUPPORTED_SUFFIXES = frozenset(
+    {".pdf", ".jpg", ".jpeg", ".png", ".tiff", ".tif", ".bmp", ".webp", ".gif"}
+)
+
 
 class MainPresenter:
     """MVP Presenter — 所有業務邏輯層。"""
@@ -93,18 +105,21 @@ class MainPresenter:
     # 公開 API
     # ------------------------------------------------------------------
 
-    def load_pdfs(self, files: list[str]) -> None:
-        files = [f for f in files if f.lower().endswith(".pdf")]
-        if not files:
+    def load_files(self, files: list[str]) -> None:
+        """載入 PDF 與圖片檔案（統一入口）。"""
+        supported = [
+            f for f in files
+            if Path(f).suffix.lower() in _SUPPORTED_SUFFIXES
+        ]
+        if not supported:
             return
         before = self._capture_before_change()
         try:
-            added_doc_ids, failed_paths = self._workspace.open_pdfs(files)
+            added_doc_ids, failed_paths = self._workspace.open_files(supported)
         except Exception as e:
-            self._view.show_error("開啟 PDF 失敗", str(e))
+            self._view.show_error("開啟檔案失敗", str(e))
             return
 
-        # 從 open_pdfs() 解包 failed_paths，告知用戶哪些檔案失敗
         if failed_paths:
             names = "\n".join(f"• {p.name}" for p in failed_paths)
             self._view.show_error(
@@ -112,7 +127,6 @@ class MainPresenter:
                 f"以下 {len(failed_paths)} 個檔案載入失敗，其餘頁面已正常加入：\n\n{names}",
             )
 
-        # 即使部分失敗，只要有成功載入的頁面就更新 UI
         if not added_doc_ids:
             return
 
@@ -121,27 +135,35 @@ class MainPresenter:
         self._view.set_status(self._status_text())
         self._view.refresh_view()
 
+    def load_pdfs(self, files: list[str]) -> None:
+        """向後相容入口，委派至 load_files()。"""
+        self.load_files(files)
+
     def on_add_pdf(self) -> None:
-        files, _ = QFileDialog.getOpenFileNames(None, "開啟 PDF", "", "PDF 檔案 (*.pdf)")
+        files, _ = QFileDialog.getOpenFileNames(
+            None, "開啟 PDF 或圖片", "", _FILE_FILTER
+        )
         if files:
-            self.load_pdfs(files)
+            self.load_files(files)
 
     def on_add_folder(self) -> None:
-        directory = QFileDialog.getExistingDirectory(None, "選擇含 PDF 的資料夾", "")
+        directory = QFileDialog.getExistingDirectory(None, "選擇含 PDF／圖片的資料夾", "")
         if not directory:
             return
         root = Path(directory)
         files = sorted(
-            str(p) for p in root.iterdir() if p.is_file() and p.suffix.lower() == ".pdf"
+            str(p)
+            for p in root.iterdir()
+            if p.is_file() and p.suffix.lower() in _SUPPORTED_SUFFIXES
         )
         if not files:
             QMessageBox.information(
                 None,
                 "開啟資料夾",
-                "此資料夾內沒有找到 PDF 檔案（僅揃揃一層目錄，不含子資料夾）。",
+                "此資料夾內沒有找到支援的 PDF 或圖片檔案（僅掃描一層目錄，不含子資料夾）。",
             )
             return
-        self.load_pdfs(files)
+        self.load_files(files)
 
     def on_pages_reordered(self, source_rows: list[int], target: int) -> None:
         if not source_rows:

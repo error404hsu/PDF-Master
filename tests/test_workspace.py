@@ -1,6 +1,6 @@
 """tests/test_workspace.py
 
-洪蓋 WorkspaceManager 各公開方法與邊界條件。
+覆蓋 WorkspaceManager 各公開方法與邊界條件。
 使用 FakeBackend，不啟動真實 PyMuPDF 或 Qt。
 """
 from __future__ import annotations
@@ -11,7 +11,7 @@ import unittest
 from pathlib import Path
 
 from core.export_service import ExportService
-from core.models import ExportOptions, PageSnapshot, PdfInspectionResult
+from core.models import ExportOptions, ImageInspectionResult, PageSnapshot, PdfInspectionResult
 from core.thumbnail_service import ThumbnailService
 from core.workspace import WorkspaceManager
 
@@ -37,12 +37,34 @@ class FakeBackend:
                 encrypted=True,
             ),
         }
+        self.image_catalog: dict[Path, ImageInspectionResult] = {
+            Path("photo.jpg"): ImageInspectionResult(
+                path=Path("photo.jpg"),
+                page_count=1,
+                width_px=1920,
+                height_px=1080,
+                format="jpeg",
+            ),
+            Path("scan.tiff"): ImageInspectionResult(
+                path=Path("scan.tiff"),
+                page_count=3,
+                width_px=2480,
+                height_px=3508,
+                format="tiff",
+            ),
+        }
 
     def inspect_pdf(self, path: Path) -> PdfInspectionResult:
         p = Path(path)
         if p not in self.catalog:
             raise FileNotFoundError(f"FakeBackend: 找不到 {path}")
         return self.catalog[p]
+
+    def inspect_image(self, path: Path) -> ImageInspectionResult:
+        p = Path(path)
+        if p not in self.image_catalog:
+            raise FileNotFoundError(f"FakeBackend: 找不到圖片 {path}")
+        return self.image_catalog[p]
 
     def render_thumbnail(
         self,
@@ -143,7 +165,7 @@ class WorkspaceManagerTests(unittest.TestCase):
         self.assertEqual(p["effective_rotation"], 0)
 
     # ------------------------------------------------------------------
-    # open_pdfs 回傳元組
+    # open_pdfs / open_files 回傳元組
     # ------------------------------------------------------------------
 
     def test_open_pdfs_returns_tuple(self) -> None:
@@ -179,6 +201,67 @@ class WorkspaceManagerTests(unittest.TestCase):
         added, failed = ws.open_pdfs([])
         self.assertEqual(added, [])
         self.assertEqual(failed, [])
+
+    # ------------------------------------------------------------------
+    # 圖片轉 PDF — open_files() 測試
+    # ------------------------------------------------------------------
+
+    def test_open_files_jpg_produces_one_page(self) -> None:
+        """傳入 JPG 應正常產生一頁。"""
+        ws = WorkspaceManager(self.backend)
+        added, failed = ws.open_files(["photo.jpg"])
+        self.assertEqual(len(added), 1)
+        self.assertEqual(failed, [])
+        self.assertEqual(len(ws.pages), 1)
+        snap = ws.snapshot()
+        self.assertEqual(snap.pages[0].source, "photo.jpg")
+        self.assertEqual(snap.pages[0].source_page_index, 0)
+
+    def test_open_files_multipage_tiff_produces_correct_page_count(self) -> None:
+        """傳入多頁 TIFF 應產生對應幀數的頁面。"""
+        ws = WorkspaceManager(self.backend)
+        added, failed = ws.open_files(["scan.tiff"])
+        self.assertEqual(len(added), 1)
+        self.assertEqual(failed, [])
+        self.assertEqual(len(ws.pages), 3)
+        snap = ws.snapshot()
+        # 確認每一幀都對應正確的 source_page_index
+        for i in range(3):
+            self.assertEqual(snap.pages[i].source_page_index, i)
+            self.assertEqual(snap.pages[i].source, "scan.tiff")
+
+    def test_open_files_mixed_pdf_and_image(self) -> None:
+        """混入 PDF + JPG，頁序應和呼叫順序一致。"""
+        ws = WorkspaceManager(self.backend)
+        added, failed = ws.open_files(["A.pdf", "photo.jpg"])
+        self.assertEqual(len(added), 2)  # 一個 PDF doc_id + 一個 image doc_id
+        self.assertEqual(failed, [])
+        # A.pdf 有 3 頁，photo.jpg 有 1 頁
+        self.assertEqual(len(ws.pages), 4)
+        snap = ws.snapshot()
+        self.assertEqual(snap.pages[0].source, "A.pdf")
+        self.assertEqual(snap.pages[3].source, "photo.jpg")
+
+    def test_open_files_corrupted_image_listed_in_failed(self) -> None:
+        """損壞圖片應列入 failed_paths，不中斷其餘對象。"""
+        ws = WorkspaceManager(self.backend)
+        # broken.png 不在 image_catalog 中，會拋出 FileNotFoundError
+        added, failed = ws.open_files(["A.pdf", "broken.png"])
+        self.assertEqual(len(added), 1)   # A.pdf 成功
+        self.assertEqual(len(failed), 1)
+        self.assertEqual(failed[0], Path("broken.png"))
+        self.assertEqual(len(ws.pages), 3)  # 只有 A.pdf 的 3 頁
+
+    def test_open_files_open_pdfs_backward_compat(self) -> None:
+        """open_pdfs() 委派至 open_files()，行為不變。"""
+        ws = WorkspaceManager(self.backend)
+        added_via_open_files, _ = ws.open_files(["A.pdf"])
+
+        ws2 = WorkspaceManager(self.backend)
+        added_via_open_pdfs, _ = ws2.open_pdfs(["A.pdf"])
+
+        self.assertEqual(len(added_via_open_files), len(added_via_open_pdfs))
+        self.assertEqual(len(ws.pages), len(ws2.pages))
 
     # ------------------------------------------------------------------
     # 頁面操作

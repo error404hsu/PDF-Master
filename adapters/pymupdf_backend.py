@@ -3,7 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from core.exceptions import PdfBackendUnavailableError
-from core.models import ExportOptions, ExportPage, PdfInspectionResult
+from core.models import ExportOptions, ExportPage, ImageInspectionResult, PdfInspectionResult
+
+# 支援的圖片副檔名（小寫），與 workspace.IMAGE_SUFFIXES 保持一致
+SUPPORTED_IMAGE_SUFFIXES = frozenset(
+    {".jpg", ".jpeg", ".png", ".tiff", ".tif", ".bmp", ".webp", ".gif"}
+)
 
 
 class PyMuPdfBackend:
@@ -39,6 +44,25 @@ class PyMuPdfBackend:
                 page_rotations=page_rotations,
             )
 
+    def inspect_image(self, path: Path) -> ImageInspectionResult:
+        """回傳圖片基本資訊；多頁 TIFF 的 page_count > 1。
+
+        PyMuPDF 原生可讀取 JPG/PNG/TIFF/BMP/WEBP/GIF，
+        無須額外相依套件。
+        """
+        path = Path(path)
+        with self.fitz.open(path) as doc:
+            page_count = doc.page_count
+            first_page = doc.load_page(0)
+            rect = first_page.rect
+            return ImageInspectionResult(
+                path=path,
+                page_count=page_count,
+                width_px=int(rect.width),
+                height_px=int(rect.height),
+                format=path.suffix.lstrip(".").lower(),
+            )
+
     def render_thumbnail(
         self,
         source_path: Path,
@@ -53,7 +77,8 @@ class PyMuPdfBackend:
         source_path = Path(source_path)
         output_path = Path(output_path)
 
-        with self.fitz.open(source_path) as doc:
+        # 圖片來源需先轉換為 PDF 後再讀取頁面
+        with self._open_source_as_pdf(source_path) as doc:
             page = doc.load_page(page_index)
             matrix = self.fitz.Matrix(zoom, zoom).prerotate(final_rotation)
             pix = page.get_pixmap(matrix=matrix, alpha=False)
@@ -73,7 +98,8 @@ class PyMuPdfBackend:
         if zoom <= 0:
             raise ValueError("zoom must be greater than 0")
 
-        with self.fitz.open(Path(source_path)) as doc:
+        source_path = Path(source_path)
+        with self._open_source_as_pdf(source_path) as doc:
             page = doc.load_page(page_index)
             matrix = self.fitz.Matrix(zoom, zoom).prerotate(rotation)
             pix = page.get_pixmap(matrix=matrix, alpha=False)
@@ -93,6 +119,7 @@ class PyMuPdfBackend:
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         out_doc = self.fitz.open()
+        # 快取：原始路徑 → 已轉換為 PDF 的 fitz.Document
         src_docs: dict[Path, object] = {}
 
         try:
@@ -100,7 +127,7 @@ class PyMuPdfBackend:
                 source_path = Path(export_page.source_path)
                 src = src_docs.get(source_path)
                 if src is None:
-                    src = self.fitz.open(source_path)
+                    src = self._open_source_as_pdf(source_path)
                     src_docs[source_path] = src
 
                 out_doc.insert_pdf(
@@ -143,13 +170,31 @@ class PyMuPdfBackend:
         finally:
             for src in src_docs.values():
                 try:
-                    src.close()
+                    src.close()  # type: ignore[union-attr]
                 except Exception:
                     pass
             out_doc.close()
 
+    # ------------------------------------------------------------------
+    # 內部輔助
+    # ------------------------------------------------------------------
+
+    def _open_source_as_pdf(self, source_path: Path):
+        """將路徑對應的來源開啟為 fitz PDF Document。
+
+        圖片格式會先以 convert_to_pdf() 轉換為 in-memory PDF，
+        使 insert_pdf() 與 load_page() 可以統一處理。
+        """
+        suffix = source_path.suffix.lower()
+        if suffix in SUPPORTED_IMAGE_SUFFIXES:
+            img_doc = self.fitz.open(source_path)
+            pdf_bytes = img_doc.convert_to_pdf()
+            img_doc.close()
+            return self.fitz.open("pdf", pdf_bytes)
+        return self.fitz.open(source_path)
+
     def _page_rotations(self, doc) -> list[int]:
-        # 使用列表推导式取代 N+1 load_page 迴圈
+        # 使用列表推導式取代 N+1 load_page 迴圈
         return [page.rotation for page in doc]
 
     def _extract_attachments(self, doc) -> list[str]:

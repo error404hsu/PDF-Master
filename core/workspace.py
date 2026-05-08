@@ -19,11 +19,16 @@ from .protocols import PdfBackend
 
 logger = logging.getLogger(__name__)
 
+# 支援的圖片副檔名（小寫）
+IMAGE_SUFFIXES = frozenset(
+    {".jpg", ".jpeg", ".png", ".tiff", ".tif", ".bmp", ".webp", ".gif"}
+)
+
 
 class WorkspaceManager:
     """核心工作區管理員。
 
-    職責：PDF 頁面集合的增刪移轉，以及匯出計畫建構。
+    職責：PDF／圖片頁面集合的增刪移轉，以及匯出計畫建構。
     縮圖目錄生命週期由 ThumbnailService 全權負責，
     本類別不再持有 thumbnail_dir，亦不自行建立資料夾。
     """
@@ -34,70 +39,134 @@ class WorkspaceManager:
         self._inspection_cache: dict[str, PdfInspectionResult] = {}
         self.pages: list[PageRef] = []
 
-    def open_pdfs(
+    # ------------------------------------------------------------------
+    # 開啟檔案（統一入口：自動路由 PDF 與圖片）
+    # ------------------------------------------------------------------
+
+    def open_files(
         self, paths: Iterable[str | Path]
     ) -> tuple[list[str], list[Path]]:
-        """開啟多個 PDF 檔案。
+        """開啟多個 PDF 或圖片檔案。
 
+        根據副檔名自動路由：圖片走 _open_image()，PDF 走 _open_pdf()。
         每個檔案獨立 try/except，單一損壞不中斷其餘批次。
 
         Returns:
             (added_doc_ids, failed_paths)
-            - added_doc_ids: 成功載入的文件 ID 清單
-            - failed_paths:  載入失敗的路徑清單（可用於 UI 提示）
         """
         added_doc_ids: list[str] = []
         failed_paths: list[Path] = []
 
-        pending_source_pdfs: dict[str, SourcePdf] = {}
-        pending_inspections: dict[str, PdfInspectionResult] = {}
-        pending_pages: list[PageRef] = []
-
         for raw_path in paths:
             path = Path(raw_path)
             try:
-                inspected = self.backend.inspect_pdf(path)
-                doc_id = new_id()
-
-                added_doc_ids.append(doc_id)
-                pending_inspections[doc_id] = inspected
-                pending_source_pdfs[doc_id] = SourcePdf(
-                    doc_id=doc_id,
-                    path=path,
-                    page_count=inspected.page_count,
-                    metadata=inspected.metadata,
-                    page_labels=inspected.page_labels,
-                    toc=inspected.toc,
-                    attachments=inspected.attachments,
-                    forms_present=inspected.forms_present,
-                    encrypted=inspected.encrypted,
-                )
-
-                expanded_labels = self._expand_labels(
-                    inspected.page_count,
-                    inspected.page_labels or [],
-                )
-                rotations = list(inspected.page_rotations or [0] * inspected.page_count)
-
-                for page_index in range(inspected.page_count):
-                    pending_pages.append(
-                        PageRef(
-                            page_id=new_id(),
-                            source_doc_id=doc_id,
-                            source_path=path,
-                            source_page_index=page_index,
-                            source_page_label=expanded_labels[page_index],
-                            base_rotation=rotations[page_index] if page_index < len(rotations) else 0,
-                        )
-                    )
+                if path.suffix.lower() in IMAGE_SUFFIXES:
+                    ids = self._open_image(path)
+                else:
+                    ids = self._open_pdf(path)
+                added_doc_ids.extend(ids)
             except Exception as exc:
                 logger.warning("無法開啟 %s：%s", path, exc)
                 failed_paths.append(path)
 
-        self._inspection_cache.update(pending_inspections)
-        self.source_pdfs.update(pending_source_pdfs)
-        self.pages.extend(pending_pages)
         return added_doc_ids, failed_paths
+
+    def open_pdfs(
+        self, paths: Iterable[str | Path]
+    ) -> tuple[list[str], list[Path]]:
+        """開啟多個 PDF 檔案（向後相容入口，內部委派給 open_files()）。
+
+        Returns:
+            (added_doc_ids, failed_paths)
+        """
+        return self.open_files(paths)
+
+    # ------------------------------------------------------------------
+    # 內部開啟邏輯
+    # ------------------------------------------------------------------
+
+    def _open_pdf(
+        self, path: Path
+    ) -> list[str]:
+        """開啟單一 PDF，回傳新增的 doc_id 清單（通常只有 1 個）。"""
+        inspected = self.backend.inspect_pdf(path)
+        doc_id = new_id()
+
+        self._inspection_cache[doc_id] = inspected
+        self.source_pdfs[doc_id] = SourcePdf(
+            doc_id=doc_id,
+            path=path,
+            page_count=inspected.page_count,
+            metadata=inspected.metadata,
+            page_labels=inspected.page_labels,
+            toc=inspected.toc,
+            attachments=inspected.attachments,
+            forms_present=inspected.forms_present,
+            encrypted=inspected.encrypted,
+        )
+
+        expanded_labels = self._expand_labels(
+            inspected.page_count,
+            inspected.page_labels or [],
+        )
+        rotations = list(inspected.page_rotations or [0] * inspected.page_count)
+
+        for page_index in range(inspected.page_count):
+            self.pages.append(
+                PageRef(
+                    page_id=new_id(),
+                    source_doc_id=doc_id,
+                    source_path=path,
+                    source_page_index=page_index,
+                    source_page_label=expanded_labels[page_index],
+                    base_rotation=rotations[page_index] if page_index < len(rotations) else 0,
+                )
+            )
+
+        return [doc_id]
+
+    def _open_image(
+        self, path: Path
+    ) -> list[str]:
+        """開啟圖片（含多頁 TIFF），每一幀對應一頁 PageRef。
+
+        以虛擬 PdfInspectionResult 填充 _inspection_cache，
+        讓 export_pdf() 的 source_info 查找路徑保持一致。
+        """
+        img_info = self.backend.inspect_image(path)
+        doc_id = new_id()
+
+        # 以虛擬 PdfInspectionResult 填入 cache（格式統一，供 export 取用）
+        fake_inspection = PdfInspectionResult(
+            path=path,
+            page_count=img_info.page_count,
+            encrypted=False,
+        )
+        self._inspection_cache[doc_id] = fake_inspection
+        self.source_pdfs[doc_id] = SourcePdf(
+            doc_id=doc_id,
+            path=path,
+            page_count=img_info.page_count,
+            encrypted=False,
+        )
+
+        for frame_index in range(img_info.page_count):
+            self.pages.append(
+                PageRef(
+                    page_id=new_id(),
+                    source_doc_id=doc_id,
+                    source_path=path,
+                    source_page_index=frame_index,
+                    source_page_label="",
+                    base_rotation=0,
+                )
+            )
+
+        return [doc_id]
+
+    # ------------------------------------------------------------------
+    # 頁面操作
+    # ------------------------------------------------------------------
 
     def move_pages(self, indices: list[int], target_index: int) -> None:
         if not indices:

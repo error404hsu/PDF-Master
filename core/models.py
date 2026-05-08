@@ -97,6 +97,23 @@ class PdfInspectionResult:
 
 
 @dataclass(slots=True, frozen=True)
+class ImageInspectionResult:
+    """圖片檢查結果。單張圖片 page_count=1；多頁 TIFF 為幀數。"""
+
+    path: Path
+    page_count: int          # 單張圖片 = 1，多頁 TIFF = 幀數
+    width_px: int
+    height_px: int
+    format: str              # "jpeg" / "png" / "tiff" 等
+    encrypted: bool = False  # 圖片不加密，保留為統一介面
+
+    def __post_init__(self):
+        object.__setattr__(self, "path", Path(self.path))
+        if self.page_count < 1:
+            raise ValueError("page_count must be >= 1")
+
+
+@dataclass(slots=True, frozen=True)
 class ExportPage:
     source_path: Path
     source_page_index: int
