@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: "Python ${{ matrix.python-version }}"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # 安裝所有依賴（含 dev 群組）——以 pyproject.toml 為單一真實來源
+          pip install -e ".[dev]"
+          # 模擬 PyMuPDF：在 CI 用準小僳包防止這個大依賴安裝失敗
+          pip install pymupdf --quiet || true
+
+      - name: Run pytest
+        env:
+          # 導入 offscreen 防止無額幕場景下 Qt 崩潰
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          pytest --tb=short -q
+
+      - name: Run ruff check
+        # 以 pyproject.toml [tool.ruff] 為設定來源，不重複配置
+        run: ruff check .
+
+      - name: Run mypy
+        # mypy 對象：core/ 與 adapters/（strict mode 已在 pyproject.toml 定義）
+        run: mypy core/ adapters/
