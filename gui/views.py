@@ -35,10 +35,16 @@ logger = logging.getLogger("gui.views")
 
 _source_color_cache: dict[str, str] = {}
 
-_LINE_COLOR        = "#3b82f6"
-_LINE_WIDTH        = 2
-_DIAMOND_R         = 5
-_INDICATOR_PADDING = 4   # 插入線距卡片上下邊緣的縮排 px
+_LINE_COLOR = "#3b82f6"
+_LINE_WIDTH = 2
+_DIAMOND_R = 5
+_INDICATOR_PADDING = 4  # 插入線距卡片上下邊緣的縮排 px
+
+_HOVER_BORDER_COLOR = "#60a5fa"
+_HOVER_FILL_COLOR = "#dbeafe"
+
+_AUTO_SCROLL_MARGIN = 36
+_AUTO_SCROLL_STEP = 28
 
 
 def _get_source_color(source_pdf: str) -> str:
@@ -138,6 +144,7 @@ class PageCardDelegate(QStyledItemDelegate):
                 info = f"{info} | {short_err}"
             else:
                 info = f"{info} | 縮圖失敗"
+
         painter.drawText(
             rect.adjusted(5, rect.height() - 22, -5, -5),
             Qt.AlignCenter | Qt.TextSingleLine,
@@ -150,12 +157,12 @@ class PageCardDelegate(QStyledItemDelegate):
 
 
 class PageListView(QListView):
-    pages_reordered    = Signal(list, int)
-    pdf_files_dropped  = Signal(list)
-    context_rotate_left    = Signal()
-    context_rotate_180     = Signal()
-    context_rotate_right   = Signal()
-    context_delete         = Signal()
+    pages_reordered = Signal(list, int)
+    pdf_files_dropped = Signal(list)
+    context_rotate_left = Signal()
+    context_rotate_180 = Signal()
+    context_rotate_right = Signal()
+    context_delete = Signal()
     context_export_selected = Signal()
 
     def __init__(self, parent=None):
@@ -178,9 +185,10 @@ class PageListView(QListView):
         self.customContextMenuRequested.connect(self._show_context_menu)
 
         self._drop_index: int = -1
-        self._drop_x:     int = -1
+        self._drop_x: int = -1
         self._drop_y_top: int = 0
         self._drop_y_bot: int = 0
+        self._hover_row: int = -1
 
     # ── 右鍵選單 ───────────────────────────────────────────────────
 
@@ -192,124 +200,217 @@ class PageListView(QListView):
 
         menu = QMenu(self)
         menu.setStyleSheet("""
-            QMenu {
-                background-color: #ffffff;
-                border: 1px solid #e2e8f0;
-                border-radius: 6px;
-                padding: 4px;
-                font-size: 10pt;
-            }
-            QMenu::item { padding: 6px 24px; border-radius: 4px; color: #1e293b; }
-            QMenu::item:selected { background-color: #eff6ff; color: #1e40af; }
-            QMenu::separator { height: 1px; background-color: #e2e8f0; margin: 4px 8px; }
+        QMenu {
+            background-color: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            padding: 4px;
+            font-size: 10pt;
+        }
+        QMenu::item { padding: 6px 24px; border-radius: 4px; color: #1e293b; }
+        QMenu::item:selected { background-color: #eff6ff; color: #1e40af; }
+        QMenu::separator { height: 1px; background-color: #e2e8f0; margin: 4px 8px; }
         """)
-        act_rot_l   = menu.addAction("↺  左轉 90°")
-        act_rot_180 = menu.addAction("↕  轉 180°")
-        act_rot_r   = menu.addAction("↻  右轉 90°")
+
+        act_rot_l = menu.addAction("↺ 左轉 90°")
+        act_rot_180 = menu.addAction("↕ 轉 180°")
+        act_rot_r = menu.addAction("↻ 右轉 90°")
         menu.addSeparator()
-        act_delete  = menu.addAction("🗑  刪除頁面")
+        act_delete = menu.addAction("🗑 刪除頁面")
         menu.addSeparator()
-        act_export  = menu.addAction("💾  匯出選取頁面")
+        act_export = menu.addAction("💾 匯出選取頁面")
 
         chosen = menu.exec(self.viewport().mapToGlobal(pos))
-        if chosen == act_rot_l:    self.context_rotate_left.emit()
-        elif chosen == act_rot_180: self.context_rotate_180.emit()
-        elif chosen == act_rot_r:   self.context_rotate_right.emit()
-        elif chosen == act_delete:  self.context_delete.emit()
-        elif chosen == act_export:  self.context_export_selected.emit()
+        if chosen == act_rot_l:
+            self.context_rotate_left.emit()
+        elif chosen == act_rot_180:
+            self.context_rotate_180.emit()
+        elif chosen == act_rot_r:
+            self.context_rotate_right.emit()
+        elif chosen == act_delete:
+            self.context_delete.emit()
+        elif chosen == act_export:
+            self.context_export_selected.emit()
 
-    # ── 插入線計算：純幾何演算法 ───────────────────────────────────
+    # ── 拖曳狀態 ───────────────────────────────────────────────────
 
     def _reset_drop_indicator(self) -> None:
         self._drop_index = -1
         self._drop_x = -1
+        self._drop_y_top = 0
+        self._drop_y_bot = 0
+        self._hover_row = -1
         self.viewport().update()
 
-    def _nearest_row(self, pos: QPoint) -> tuple[int, QRect]:
-        """
-        在所有卡片中找「中心點距 pos 最近」的那張，
-        回傳 (row, visualRect)。保證永遠有結果（count > 0 時呼叫）。
-        """
+    def _collect_visible_items(self) -> list[tuple[int, QRect]]:
         model = self.model()
-        count = model.rowCount()
-        best_row  = 0
+        if model is None:
+            return []
+
+        items: list[tuple[int, QRect]] = []
+        for row in range(model.rowCount()):
+            rect = self.visualRect(model.index(row, 0))
+            if rect.isValid():
+                items.append((row, rect))
+        return items
+
+    def _build_visual_rows(self) -> list[dict]:
+        items = self._collect_visible_items()
+        if not items:
+            return []
+
+        rows: list[list[tuple[int, QRect]]] = []
+        current: list[tuple[int, QRect]] = []
+        current_top: int | None = None
+
+        for row, rect in items:
+            if not current:
+                current = [(row, rect)]
+                current_top = rect.top()
+                continue
+
+            tolerance = max(12, rect.height() // 3)
+            if current_top is not None and abs(rect.top() - current_top) <= tolerance:
+                current.append((row, rect))
+            else:
+                rows.append(current)
+                current = [(row, rect)]
+                current_top = rect.top()
+
+        if current:
+            rows.append(current)
+
+        visual_rows: list[dict] = []
+        for row_items in rows:
+            row_items = sorted(row_items, key=lambda item: item[1].left())
+            top = min(rect.top() for _, rect in row_items)
+            bottom = max(rect.bottom() for _, rect in row_items)
+            visual_rows.append({
+                "items": row_items,
+                "top": top,
+                "bottom": bottom,
+                "center_y": (top + bottom) // 2,
+            })
+
+        return visual_rows
+
+    def _pick_visual_row(self, pos: QPoint, visual_rows: list[dict]) -> dict:
+        best_row = visual_rows[0]
         best_dist = float("inf")
-        best_rect = self.visualRect(model.index(0, 0))
-        for r in range(count):
-            rect = self.visualRect(model.index(r, 0))
-            cx = rect.center().x()
-            cy = rect.center().y()
-            dist = (cx - pos.x()) ** 2 + (cy - pos.y()) ** 2
+
+        for row_info in visual_rows:
+            top = row_info["top"]
+            bottom = row_info["bottom"]
+
+            if top <= pos.y() <= bottom:
+                dist = 0
+            elif pos.y() < top:
+                dist = top - pos.y()
+            else:
+                dist = pos.y() - bottom
+
             if dist < best_dist:
-                best_dist = r
-                best_row  = r
-                best_rect = rect
-        return best_row, best_rect
+                best_dist = dist
+                best_row = row_info
 
-    def _get_target_drop_info(self, pos: QPoint) -> tuple[int, int, int, int]:
+        return best_row
+
+    def _get_target_drop_info(self, pos: QPoint) -> tuple[int, int, int, int, int]:
         """
-        純幾何策略，完整支援所有情境：
-          1. 找距游標最近的卡片（nearest）
-          2. 判斷游標在 nearest 的左半或右半
-          3. 插入線 X = nearest 與其鄰居的「間隙正中線」
-             - 若無鄰居（行首/行尾/跨列），則以 spacing 估算
-          4. 插入線高度跟隨 nearest 的卡片高度
-
-        回傳 (target_index, line_x, line_y_top, line_y_bot)
+        穩定版幾何策略：
+        1. 先依 visualRect 的 top 分組成「視覺列」
+        2. 用滑鼠 y 找到最接近的視覺列
+        3. 為該列建立所有插槽（列首 / 卡片間 / 列尾）
+        4. 用滑鼠 x 找最近插槽，回傳 target index 與插入線位置
+        5. 同時回傳要高亮的目標卡片 row
         """
         model = self.model()
         if model is None:
-            return -1, -1, 0, 0
+            return -1, -1, 0, 0, -1
+
         count = model.rowCount()
         if count == 0:
-            return 0, 20, 20, self.viewport().height() - 20
+            return 0, 20, 20, self.viewport().height() - 20, -1
 
-        row, rect = self._nearest_row(pos)
-        half_gap  = self.spacing() // 2
-        y_top     = rect.top()    + _INDICATOR_PADDING
-        y_bot     = rect.bottom() - _INDICATOR_PADDING
+        visual_rows = self._build_visual_rows()
+        if not visual_rows:
+            return 0, 20, 20, self.viewport().height() - 20, -1
 
-        insert_before = pos.x() <= rect.center().x()
+        row_info = self._pick_visual_row(pos, visual_rows)
+        items: list[tuple[int, QRect]] = row_info["items"]
+        half_gap = self.spacing() // 2
 
-        if insert_before:
-            # 插到 row 前面
-            if row == 0:
-                # 第一頁之前：插入線在第一張卡片左側
-                x = rect.left() - half_gap
-            else:
-                prev_rect = self.visualRect(model.index(row - 1, 0))
-                same_row  = abs(prev_rect.top() - rect.top()) < rect.height() // 2
-                if same_row:
-                    x = (prev_rect.right() + rect.left()) // 2
-                else:
-                    # 跨列：插到本列行首左側
-                    x = rect.left() - half_gap
-            return row, x, y_top, y_bot
-        else:
-            # 插到 row 後面
-            if row == count - 1:
-                # 最後一頁之後：插入線在最後一張卡片右側
-                x = rect.right() + half_gap
-            else:
-                next_rect = self.visualRect(model.index(row + 1, 0))
-                same_row  = abs(next_rect.top() - rect.top()) < rect.height() // 2
-                if same_row:
-                    x = (rect.right() + next_rect.left()) // 2
-                else:
-                    # 跨列：插到本列行尾右側
-                    x = rect.right() + half_gap
-            return row + 1, x, y_top, y_bot
+        slots: list[tuple[int, int, int]] = []
 
-    # ── 插入線繪製 ─────────────────────────────────────────────────
+        first_row, first_rect = items[0]
+        slots.append((first_row, first_rect.left() - half_gap, first_row))
+
+        for (left_row, left_rect), (right_row, right_rect) in zip(items, items[1:]):
+            slot_x = (left_rect.right() + right_rect.left()) // 2
+            slots.append((right_row, slot_x, right_row))
+
+        last_row, last_rect = items[-1]
+        slots.append((last_row + 1, last_rect.right() + half_gap, last_row))
+
+        target_index, line_x, hover_row = min(
+            slots,
+            key=lambda item: abs(pos.x() - item[1]),
+        )
+
+        y_top = row_info["top"] + _INDICATOR_PADDING
+        y_bot = row_info["bottom"] - _INDICATOR_PADDING
+        return target_index, line_x, y_top, y_bot, hover_row
+
+    # ── 拖曳輔助 ───────────────────────────────────────────────────
+
+    def _maybe_auto_scroll(self, pos: QPoint) -> None:
+        bar = self.verticalScrollBar()
+        if bar is None:
+            return
+
+        y = pos.y()
+        height = self.viewport().height()
+
+        if y < _AUTO_SCROLL_MARGIN:
+            bar.setValue(max(bar.minimum(), bar.value() - _AUTO_SCROLL_STEP))
+        elif y > height - _AUTO_SCROLL_MARGIN:
+            bar.setValue(min(bar.maximum(), bar.value() + _AUTO_SCROLL_STEP))
+
+    # ── 插入線與高亮繪製 ───────────────────────────────────────────
+
+    def _draw_hover_target(self, painter: QPainter) -> None:
+        if self._hover_row < 0:
+            return
+
+        model = self.model()
+        if model is None or self._hover_row >= model.rowCount():
+            return
+
+        rect = self.visualRect(model.index(self._hover_row, 0))
+        if not rect.isValid():
+            return
+
+        rect = rect.adjusted(6, 6, -6, -6)
+
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        fill = QColor(_HOVER_FILL_COLOR)
+        fill.setAlpha(55)
+        painter.setBrush(QBrush(fill))
+        painter.setPen(QPen(QColor(_HOVER_BORDER_COLOR), 2, Qt.DashLine))
+        painter.drawRoundedRect(rect, 8, 8)
+
+        painter.restore()
 
     def _draw_drop_indicator(self, painter: QPainter) -> None:
         if self._drop_index == -1 or self._drop_x < 0:
             return
 
-        x  = self._drop_x
+        x = self._drop_x
         y1 = self._drop_y_top
         y2 = self._drop_y_bot
-        r  = _DIAMOND_R
+        r = _DIAMOND_R
         color = QColor(_LINE_COLOR)
 
         painter.save()
@@ -323,15 +424,15 @@ class PageListView(QListView):
         painter.setBrush(QBrush(color))
 
         painter.drawPolygon(QPolygon([
-            QPoint(x,     y1),
+            QPoint(x, y1),
             QPoint(x + r, y1 + r),
-            QPoint(x,     y1 + r * 2),
+            QPoint(x, y1 + r * 2),
             QPoint(x - r, y1 + r),
         ]))
         painter.drawPolygon(QPolygon([
-            QPoint(x,     y2 - r * 2),
+            QPoint(x, y2 - r * 2),
             QPoint(x + r, y2 - r),
-            QPoint(x,     y2),
+            QPoint(x, y2),
             QPoint(x - r, y2 - r),
         ]))
 
@@ -348,18 +449,26 @@ class PageListView(QListView):
 
     def dragMoveEvent(self, event: QDragMoveEvent):
         mime = event.mimeData()
+        pos = event.position().toPoint()
+
+        self._maybe_auto_scroll(pos)
+
         if mime.hasUrls():
+            self._reset_drop_indicator()
             event.acceptProposedAction()
             return
+
         if mime.hasFormat("application/x-pagemove"):
-            idx, x, yt, yb = self._get_target_drop_info(event.position().toPoint())
+            idx, x, yt, yb, hover_row = self._get_target_drop_info(pos)
             self._drop_index = idx
-            self._drop_x     = x
+            self._drop_x = x
             self._drop_y_top = yt
             self._drop_y_bot = yb
+            self._hover_row = hover_row
             event.acceptProposedAction()
             self.viewport().update()
             return
+
         super().dragMoveEvent(event)
 
     def dragLeaveEvent(self, event):
@@ -368,6 +477,7 @@ class PageListView(QListView):
 
     def dropEvent(self, event: QDropEvent):
         mime = event.mimeData()
+
         if mime.hasUrls():
             files = [
                 url.toLocalFile()
@@ -379,6 +489,7 @@ class PageListView(QListView):
                 event.acceptProposedAction()
             else:
                 event.ignore()
+
             self._reset_drop_indicator()
             return
 
@@ -399,12 +510,15 @@ class PageListView(QListView):
                     event.ignore()
             else:
                 event.ignore()
+
             self._reset_drop_indicator()
             return
 
         super().dropEvent(event)
+        self._reset_drop_indicator()
 
     def paintEvent(self, event):
         super().paintEvent(event)
         painter = QPainter(self.viewport())
+        self._draw_hover_target(painter)
         self._draw_drop_indicator(painter)
