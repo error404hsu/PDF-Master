@@ -130,10 +130,35 @@ class ExportOptions:
 
 
 @dataclass(slots=True, frozen=True)
+class PageSnapshot:
+    """強型別快照：對應 WorkspaceManager.snapshot() 中每一頁的輸出。"""
+
+    index: int
+    page_id: str
+    source_doc_id: str
+    source: str                    # source_path.name
+    source_page_index: int
+    label: str
+    base_rotation: int
+    rotation_delta: int
+    effective_rotation: int
+    thumb_path: str | None
+
+    def __post_init__(self):
+        if self.index < 0:
+            raise ValueError("index must be >= 0")
+        if self.source_page_index < 0:
+            raise ValueError("source_page_index must be >= 0")
+
+    def __getitem__(self, key: str) -> Any:  # 向後相容：允許 snapshot.pages[i]["label"]
+        return getattr(self, key)
+
+
+@dataclass(slots=True, frozen=True)
 class WorkspaceSnapshot:
     source_count: int
     page_count: int
-    pages: list[dict[str, Any]]
+    pages: list[PageSnapshot]
 
     def __post_init__(self):
         if self.source_count < 0:
