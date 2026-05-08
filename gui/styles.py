@@ -160,3 +160,51 @@ class UiStyles:
         font-size: 10pt;
         padding: 10px 20px;
     """
+
+    TOOLBAR = """
+QToolBar {
+    background-color: #ffffff;
+    border-bottom: 1px solid #e2e8f0;
+    padding: 4px 8px;
+    spacing: 4px;
+}
+QToolButton {
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 4px 8px;
+    color: #475569;
+    font-size: 9pt;
+    min-width: 52px;
+}
+QToolButton:hover {
+    background-color: #f1f5f9;
+    border-color: #e2e8f0;
+}
+QToolButton:pressed {
+    background-color: #e2e8f0;
+}
+QToolButton:disabled {
+    color: #cbd5e1;
+}
+QToolBar::separator {
+    width: 1px;
+    background-color: #e2e8f0;
+    margin: 6px 4px;
+}
+"""
+
+    TOOLBAR_PRIMARY = """
+QToolButton {
+    background-color: #3b82f6;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-size: 9pt;
+    font-weight: 600;
+    min-width: 72px;
+}
+QToolButton:hover { background-color: #2563eb; }
+QToolButton:disabled { background-color: #93c5fd; }
+"""

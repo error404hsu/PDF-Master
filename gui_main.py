@@ -9,9 +9,10 @@ UI/UX 改進（feat commit）：
   - Footer 分離狀態列（左）與快捷鍵提示（右）
   - Empty State 引導畫面（無頁面時顯示）
   - Toast 非阻塞通知（取代非嚴重 QMessageBox）
-  - Header 加入進度條（載入時顯示）
+  - QToolBar Header，搭配 SVG 圖示系統
   - PageCardDelegate 來源色帶（多檔區分）
   - PageListView 右鍵情境選單
+  - 圖片檔案 drag-and-drop 支援
 """
 from __future__ import annotations
 
@@ -21,18 +22,19 @@ import shutil
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont, QDragEnterEvent, QDropEvent, QKeySequence, QShortcut
+from PySide6.QtCore import QSize, Qt
+from PySide6.QtGui import QAction, QDragEnterEvent, QDropEvent, QFont, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
-    QFrame,
-    QHBoxLayout,
     QLabel,
     QMainWindow,
     QProgressBar,
-    QPushButton,
+    QHBoxLayout,
+    QToolBar,
     QVBoxLayout,
     QWidget,
+    QFrame,
+    QPushButton,
 )
 
 try:
@@ -44,6 +46,7 @@ except ImportError as e:
     print(f"匯入核心邏輯失敗，請確保 gui_main.py 放在專案根目錄。錯誤: {e}")
     sys.exit(1)
 
+from gui.icons import AppIcons
 from gui.interfaces import IMainView
 from gui.models import PdfPageModel, SnapshotHistory
 from gui.presenter import MainPresenter
@@ -54,6 +57,12 @@ from gui.empty_state import EmptyStateOverlay
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s | %(name)s | %(message)s")
 logger = logging.getLogger("gui_main")
+
+# 支援的拖放副檔名
+_SUPPORTED_SUFFIXES = frozenset({
+    ".pdf", ".jpg", ".jpeg", ".png",
+    ".tiff", ".tif", ".bmp", ".webp", ".gif"
+})
 
 
 class MainWindow(QMainWindow):
@@ -148,10 +157,10 @@ class MainWindow(QMainWindow):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        header = self._build_header()
-        main_layout.addWidget(header)
+        # QToolBar 由 addToolBar 管理，不加入 main_layout
+        self._build_toolbar()
 
-        # 進度條（緊貼 header 下方，預設隱藏）
+        # 進度條（緊貼 toolbar 下方，預設隱藏）
         self.progress_bar = QProgressBar()
         self.progress_bar.setFixedHeight(4)
         self.progress_bar.setTextVisible(False)
@@ -200,60 +209,66 @@ class MainWindow(QMainWindow):
         footer_layout.addWidget(self.footer_hint)
         main_layout.addWidget(footer_widget)
 
-    def _build_header(self) -> QFrame:
-        header = QFrame()
-        header.setFixedHeight(62)
-        header.setStyleSheet(
-            f"background-color: {UiStyles.HEADER_BG}; "
-            f"border-bottom: 1px solid {UiStyles.PANEL_BORDER};"
+    def _build_toolbar(self) -> None:
+        """建立 QToolBar 並加入主視窗頂部，取代原本的 QFrame header。"""
+        toolbar = QToolBar("主工具列", self)
+        toolbar.setIconSize(QSize(18, 18))
+        toolbar.setMovable(False)
+        toolbar.setFloatable(False)
+        toolbar.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
+        toolbar.setStyleSheet(UiStyles.TOOLBAR)
+
+        # --- 開啟檔案 / 資料夾 ---
+        self.act_open_file = QAction(AppIcons.get("open_file"), "開啟檔案", self)
+        self.act_open_folder = QAction(AppIcons.get("open_folder"), "開啟資料夾", self)
+        toolbar.addAction(self.act_open_file)
+        toolbar.addAction(self.act_open_folder)
+        toolbar.addSeparator()
+
+        # --- 復原 / 重做 ---
+        self.act_undo = QAction(AppIcons.get("undo"), "復原", self)
+        self.act_redo = QAction(AppIcons.get("redo"), "重做", self)
+        toolbar.addAction(self.act_undo)
+        toolbar.addAction(self.act_redo)
+        toolbar.addSeparator()
+
+        # --- 旋轉 / 刪除 ---
+        self.act_rot_l = QAction(AppIcons.get("rotate_left"), "左轉 90°", self)
+        self.act_rot_180 = QAction(AppIcons.get("rotate_180"), "轉 180°", self)
+        self.act_rot_r = QAction(AppIcons.get("rotate_right"), "右轉 90°", self)
+        self.act_delete = QAction(AppIcons.get("delete"), "刪除頁面", self)
+        toolbar.addAction(self.act_rot_l)
+        toolbar.addAction(self.act_rot_180)
+        toolbar.addAction(self.act_rot_r)
+        toolbar.addAction(self.act_delete)
+
+        # --- 右側 spacer ---
+        spacer = QWidget()
+        spacer.setSizePolicy(
+            spacer.sizePolicy().horizontalPolicy(),  # 取得當前策略後改用 Expanding
+            spacer.sizePolicy().verticalPolicy(),
         )
+        from PySide6.QtWidgets import QSizePolicy
+        spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        toolbar.addWidget(spacer)
 
-        layout = QHBoxLayout(header)
-        layout.setContentsMargins(15, 0, 15, 0)
-        layout.setSpacing(10)
+        # --- 匯出按鈕區 ---
+        self.act_export_sel = QAction(AppIcons.get("export_selected"), "匯出選取", self)
+        self.act_export = QAction(AppIcons.get("export"), "匯出結果", self)
 
-        title_label = QLabel("PDF排列哥")
-        title_label.setStyleSheet(
-            "font-weight: 900; font-size: 24pt; color: #1e40af; min-width: 160px;"
-        )
-        layout.addWidget(title_label)
+        toolbar.addAction(self.act_export_sel)
+        toolbar.addAction(self.act_export)
 
-        btn_w, btn_h = 88, 32
+        # 匯出結果 QToolButton 套用 primary 樣式
+        toolbar.addSeparator()
 
-        self.btn_add = self._make_button("開啟檔案", btn_w, btn_h)
-        self.btn_add_folder = self._make_button("開啟資料夾", 96, btn_h)
-        layout.addWidget(self.btn_add)
-        layout.addWidget(self.btn_add_folder)
-        layout.addWidget(self._make_separator())
-
-        self.btn_undo = self._make_button("復原", btn_w, btn_h)
-        self.btn_redo = self._make_button("重做", btn_w, btn_h)
-        layout.addWidget(self.btn_undo)
-        layout.addWidget(self.btn_redo)
-        layout.addWidget(self._make_separator())
-
-        self.btn_rot_l = self._make_button("左轉 90°", btn_w, btn_h)
-        self.btn_rot_180 = self._make_button("轉 180°", btn_w, btn_h)
-        self.btn_rot_r = self._make_button("右轉 90°", btn_w, btn_h)
-        self.btn_delete = self._make_button("刪除頁面", btn_w, btn_h, variant="danger")
-
-        layout.addWidget(self.btn_rot_l)
-        layout.addWidget(self.btn_rot_180)
-        layout.addWidget(self.btn_rot_r)
-        layout.addWidget(self.btn_delete)
-
-        layout.addStretch()
-
-        self.btn_export_sel = self._make_button("匯出選取", 96, 38)
-        self.btn_export = self._make_button("匯出結果", 100, 38, variant="primary")
-        layout.addWidget(self.btn_export_sel)
-        layout.addWidget(self.btn_export)
-
-        return header
+        self.addToolBar(Qt.TopToolBarArea, toolbar)
+        self._toolbar = toolbar
 
     def _make_button(
         self, text: str, width: int, height: int, variant: str = "base"
     ) -> QPushButton:
+        """保留以供其他呼叫方使用（向後相容）。"""
         btn = QPushButton(text)
         btn.setFixedSize(width, height)
         if variant == "danger":
@@ -276,20 +291,20 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _connect_signals(self) -> None:
-        self.btn_add.clicked.connect(self.presenter.on_add_pdf)
-        self.btn_add_folder.clicked.connect(self.presenter.on_add_folder)
-        self.btn_undo.clicked.connect(self.presenter.undo)
-        self.btn_redo.clicked.connect(self.presenter.redo)
-        self.btn_rot_l.clicked.connect(lambda: self.presenter.on_rotate_pages(-90))
-        self.btn_rot_180.clicked.connect(lambda: self.presenter.on_rotate_pages(180))
-        self.btn_rot_r.clicked.connect(lambda: self.presenter.on_rotate_pages(90))
-        self.btn_delete.clicked.connect(self.presenter.on_delete_pages)
-        self.btn_export_sel.clicked.connect(self.presenter.on_export_selected_pdf)
-        self.btn_export.clicked.connect(self.presenter.on_export_pdf)
+        self.act_open_file.triggered.connect(self.presenter.on_add_pdf)
+        self.act_open_folder.triggered.connect(self.presenter.on_add_folder)
+        self.act_undo.triggered.connect(self.presenter.undo)
+        self.act_redo.triggered.connect(self.presenter.redo)
+        self.act_rot_l.triggered.connect(lambda: self.presenter.on_rotate_pages(-90))
+        self.act_rot_180.triggered.connect(lambda: self.presenter.on_rotate_pages(180))
+        self.act_rot_r.triggered.connect(lambda: self.presenter.on_rotate_pages(90))
+        self.act_delete.triggered.connect(self.presenter.on_delete_pages)
+        self.act_export_sel.triggered.connect(self.presenter.on_export_selected_pdf)
+        self.act_export.triggered.connect(self.presenter.on_export_pdf)
 
         self.view.doubleClicked.connect(self.presenter.on_page_double_clicked)
         self.view.pages_reordered.connect(self.presenter.on_pages_reordered)
-        self.view.pdf_files_dropped.connect(self.presenter.load_pdfs)
+        self.view.pdf_files_dropped.connect(self.presenter.load_files)
 
         # 右鍵選單信號連接
         self.view.context_rotate_left.connect(lambda: self.presenter.on_rotate_pages(-90))
@@ -328,29 +343,27 @@ class MainWindow(QMainWindow):
     def update_status(self, *args: object) -> None:
         total = self.model.rowCount()
         selected = len(self.get_selected_rows())
-        # 更新左側狀態文字
         if total == 0:
             self.footer_status.setText(" 尚無頁面")
         else:
             self.footer_status.setText(f" 總計 {total} 頁 | 已選取 {selected} 頁")
-        # 控制 Empty State 顯示
         self.empty_overlay.setVisible(total == 0)
         self._update_action_buttons()
         self._update_history_buttons()
 
     def _update_history_buttons(self) -> None:
-        self.btn_undo.setEnabled(self.history.can_undo())
-        self.btn_redo.setEnabled(self.history.can_redo())
+        self.act_undo.setEnabled(self.history.can_undo())
+        self.act_redo.setEnabled(self.history.can_redo())
 
     def _update_action_buttons(self) -> None:
         has_pages = self.model.rowCount() > 0
         has_selection = bool(self.get_selected_rows())
-        self.btn_rot_l.setEnabled(has_selection)
-        self.btn_rot_180.setEnabled(has_selection)
-        self.btn_rot_r.setEnabled(has_selection)
-        self.btn_delete.setEnabled(has_selection)
-        self.btn_export_sel.setEnabled(has_selection)
-        self.btn_export.setEnabled(has_pages)
+        self.act_rot_l.setEnabled(has_selection)
+        self.act_rot_180.setEnabled(has_selection)
+        self.act_rot_r.setEnabled(has_selection)
+        self.act_delete.setEnabled(has_selection)
+        self.act_export_sel.setEnabled(has_selection)
+        self.act_export.setEnabled(has_pages)
 
     # ------------------------------------------------------------------
     # Qt 事件 override
@@ -367,12 +380,13 @@ class MainWindow(QMainWindow):
             files = [
                 url.toLocalFile()
                 for url in event.mimeData().urls()
-                if url.toLocalFile().lower().endswith(".pdf")
+                if Path(url.toLocalFile()).suffix.lower() in _SUPPORTED_SUFFIXES
             ]
             if files:
-                self.presenter.load_pdfs(files)
+                self.presenter.load_files(files)
                 event.acceptProposedAction()
             else:
+                self.show_toast("不支援的檔案格式，請拖入 PDF 或圖片檔案。", "error")
                 event.ignore()
             return
         super().dropEvent(event)
