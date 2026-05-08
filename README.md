@@ -1,5 +1,7 @@
 # PDF Master 📄
 
+[![CI](https://github.com/error404hsu/PDFMaster/actions/workflows/ci.yml/badge.svg)](https://github.com/error404hsu/PDFMaster/actions/workflows/ci.yml)
+
 > 一套以 Python + PySide6 打造的桌面版 PDF 頁面編輯器，支援多檔合併、重新排序、旋轉與匯出。
 
 ---
@@ -9,7 +11,7 @@
 | 功能 | 狀態 |
 |------|---------|
 | 開啟多個 PDF / 整個資料夾（單層）| ✅ |
-| 縮圖預覽所有頁面 | ✅ |
+| 縮圖預覽所有頁面（含失敗 fallback 提示）| ✅ |
 | 拖放重新排序頁面 | ✅ |
 | 旋轉頁面（90° 倍數）| ✅ |
 | 刪除選取頁面（支援 Ctrl+A / Delete）| ✅ |
@@ -20,9 +22,10 @@
 | 快捷鍵 Ctrl+A / Delete / Ctrl+Shift+E | ✅ |
 | 復原 / 重做（Ctrl+Z / Ctrl+Y）| ✅ |
 | MVP 介面解耦（Presenter + IMainView Protocol）| ✅ |
+| GitHub Actions CI（pytest + ruff + mypy）| ✅ |
 | 保留書簽（TOC）| 🚧 規劃中 |
 | 工作階段存檔／還原 | 🚧 規劃中 |
-| 子資料夾遞迴揃描 | 🚧 規劃中 |
+| 子資料夾遞迴掃描 | 🚧 規劃中 |
 
 ---
 
@@ -45,8 +48,8 @@ cd PDFMaster
 python -m venv .venv
 source .venv/bin/activate      # Windows: .venv\Scripts\activate
 
-# 3. 安裝相依套件
-pip install -r requirements.txt
+# 3. 安裝相依套件（含 dev 工具）
+pip install -e ".[dev]"
 
 # 4. 啟動 GUI
 python main.py
@@ -69,34 +72,36 @@ pyinstaller PDFMaster.spec
 ```
 PDFMaster/
 ├── gui_main.py          # PySide6 主視窗（View 層）
-├── main.py              # 应用程式入口
-├── requirements.txt     # 相依套件
+├── main.py              # 應用程式入口
+├── pyproject.toml       # 依賴版本鎖定 + ruff / mypy / pytest 設定（單一真實來源）
+├── requirements.txt     # 相依套件（簡易參考）
 ├── PDFMaster.spec       # PyInstaller 打包設定
 ├── PDF.ico              # 應用程式圖示
 │
 ├── core/                # 核心業務邏輯（無 UI 相依）
-│   ├── models.py        # 資料模型：PageRef、ExportOptions 等
-│   ├── workspace.py     # WorkspaceManager：頁面狀態管理
-│   ├── thumbnail_service.py  # 縮圖產生服務
-│   ├── export_service.py     # 匯出服務
+│   ├── models.py        # 資料模型：PageRef / PageSnapshot / ExportOptions 等
+│   ├── workspace.py     # WorkspaceManager：頁面狀態管理（不含縮圖目錄）
+│   ├── thumbnail_service.py  # ThumbnailService：縮圖目錄生命週期管理
+│   ├── export_service.py     # ExportService：匯出邏輯封裝
 │   ├── protocols.py     # PdfBackend Protocol 介面定義
 │   └── exceptions.py    # 自訂例外類別
 │
-├── gui/                 # GUI 套件（Phase 1 + Phase 2）
+├── gui/                 # GUI 套件（MVP 架構）
 │   ├── interfaces.py    # IMainView / IMainPresenter Protocol 定義
 │   ├── presenter.py     # MainPresenter — 所有業務邏輯
 │   ├── styles.py        # QSS 樣式常數
-│   ├── workers.py       # 背景執行緒
-│   ├── dialogs.py       # 對話框元件
-│   ├── models.py        # Qt 資料模型
-│   └── views.py         # 視圖與委派元件
+│   ├── workers.py       # ThumbnailWorker / HighResWorker 背景執行緒
+│   ├── dialogs.py       # PreviewDialog / ExportPdfDialog 對話框
+│   ├── models.py        # SnapshotHistory / PdfPageModel Qt 資料模型
+│   └── views.py         # PageCardDelegate / PageListView 視圖元件
 │
 ├── adapters/            # 後端實作（目前為 PyMuPDF）
 │   └── pymupdf_backend.py
 │
-└── tests/               # 測試套件
-    ├── test_workspace.py
-    └── test_presenter.py  # Presenter 單元測試（不啟動 Qt）
+└── tests/               # 測試套件（FakeBackend，不啟動 Qt）
+    ├── test_workspace.py      # WorkspaceManager + _expand_labels + open_pdfs tuple
+    ├── test_export_service.py # ExportService + ExportOptions 完整覆蓋
+    └── test_presenter.py      # Presenter 單元測試（MockView）
 ```
 
 ### 架構說明
@@ -111,6 +116,14 @@ PDFMaster/
 | **Backend** | `adapters/` | `PdfBackend` Protocol 實作，可替換 |
 
 Presenter 不持有任何 `QWidget` 強引用，可在純 Python 環境下進行單元測試。
+
+### 縮圖架構
+
+縮圖職責由 `ThumbnailService` 全權負責：
+- **路徑決策**：`{thumbnail_dir}/{page_id}.png`
+- **目錄生命週期**：建立、清理均由 `ThumbnailService` 管理
+- **WorkspaceManager**：僅提供 `render_thumbnail_to_disk()` 低階接口，不持有目錄
+- **錯誤顯示**：縮圖渲染失敗時，卡片顯示「縮圖失敗」紅色提示文字
 
 ---
 
@@ -133,9 +146,26 @@ Presenter 不持有任何 `QWidget` 強引用，可在純 Python 環境下進行
 - 圖片轉 PDF 支援（JPG / PNG / TIFF 等）
 - 工作階段存檔／還原（`*.pdfmaster` 專案檔）
 - 保留書簽（TOC）與互動表單
-- 子資料夾遞迴揃描
+- 子資料夾遞迴掃描
 - 浮水印／頁碼 Stamp
-- GitHub Actions CI（pytest + ruff + mypy）
+
+---
+
+## 🧪 執行測試
+
+```bash
+# 安裝 dev 依賴
+pip install -e ".[dev]"
+
+# 執行完整測試（含覆蓋率報告）
+pytest
+
+# 靜態型別檢查
+mypy core/ adapters/
+
+# Lint
+ruff check .
+```
 
 ---
 

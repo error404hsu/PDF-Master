@@ -70,15 +70,31 @@ class PageCardDelegate(QStyledItemDelegate):
             painter.drawPixmap(x, y, scaled)
         else:
             placeholder_rect = thumb_area.adjusted(8, 8, -8, -8)
-            painter.setPen(QPen(QColor("#dbeafe"), 1))
-            painter.setBrush(QColor("#f8fbff"))
-            painter.drawRoundedRect(placeholder_rect, 6, 6)
 
-            painter.setPen(QColor(UiStyles.TEXT_LIGHT))
-            status_text = "載入中..."
             if thumb_state == ThumbState.FAILED:
-                status_text = "縮圖失敗"
-            painter.drawText(placeholder_rect, Qt.AlignCenter, status_text)
+                # 失敗狀態：紅色邊框 + 警告背景
+                painter.setPen(QPen(QColor("#fca5a5"), 1))
+                painter.setBrush(QColor("#fff1f2"))
+                painter.drawRoundedRect(placeholder_rect, 6, 6)
+
+                painter.setPen(QColor("#dc2626"))
+                font = painter.font()
+                font.setBold(True)
+                font.setPointSize(9)
+                painter.setFont(font)
+                painter.drawText(placeholder_rect, Qt.AlignCenter, "⚠ 縮圖失敗")
+            else:
+                # 載入中：淡藍色佔位
+                painter.setPen(QPen(QColor("#dbeafe"), 1))
+                painter.setBrush(QColor("#f8fbff"))
+                painter.drawRoundedRect(placeholder_rect, 6, 6)
+
+                painter.setPen(QColor(UiStyles.TEXT_LIGHT))
+                font = painter.font()
+                font.setBold(False)
+                font.setPointSize(10)
+                painter.setFont(font)
+                painter.drawText(placeholder_rect, Qt.AlignCenter, "載入中...")
 
         painter.setPen(QColor(UiStyles.TEXT_MUTED))
         font = painter.font()
@@ -94,8 +110,15 @@ class PageCardDelegate(QStyledItemDelegate):
         font.setPointSize(9)
         painter.setFont(font)
         info = f"{page.source_page_label} | {page.effective_rotation}°"
-        if thumb_state == ThumbState.FAILED and thumb_error:
-            info = f"{info} | 縮圖失敗"
+        if thumb_state == ThumbState.FAILED:
+            # 失敗時底部資訊也用紅色提示
+            painter.setPen(QColor("#dc2626"))
+            if thumb_error:
+                # 擷取錯誤訊息前 30 字，避免卡片版面溢出
+                short_err = thumb_error[:30] + "..." if len(thumb_error) > 30 else thumb_error
+                info = f"{info} | {short_err}"
+            else:
+                info = f"{info} | 縮圖失敗"
         painter.drawText(
             rect.adjusted(5, rect.height() - 22, -5, -5),
             Qt.AlignCenter | Qt.TextSingleLine,

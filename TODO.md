@@ -8,7 +8,7 @@
 
 ## 🖼️ 圖片轉 PDF（新功能）
 
-> **背景**：辦公室常需將揃描圖片（JPG/TIFF）與現有 PDF 合併。PyMuPDF 原生支援讀入多種圖片格式，**無須新增任何相依套件**。
+> **背景**：辦公室常需將掃描圖片（JPG/TIFF）與現有 PDF 合併。PyMuPDF 原生支援讀入多種圖片格式，**無須新增任何相依套件**。
 
 ### 支援格式
 
@@ -16,7 +16,7 @@
 |------|---------|
 | `.jpg` / `.jpeg` | 最常見 |
 | `.png` | 支援透明背景（轉為 PDF 時自動白底）|
-| `.tiff` / `.tif` | 揃描文件常用格式；**支援多頁 TIFF**（每幀記為一頁）|
+| `.tiff` / `.tif` | 掃描文件常用格式；**支援多頁 TIFF**（每幀記為一頁）|
 | `.bmp` | Windows 點陣圖 |
 | `.webp` | 現代網頁圖片 |
 | `.gif` | 取靜態幀轉換 |
@@ -180,34 +180,41 @@ tests/test_workspace.py  ← 圖片相關測試案例
 
 ### 中優先度
 
-- `✅ 已完成（含高優先度修復）` **`_page_rotations()` N+1 問題**
+- `✅ 已完成` **`_page_rotations()` N+1 問題**
   - 改為：`[page.rotation for page in doc]`
 
-- `📌 規劃中` **`WorkspaceManager` 縮圖目錄職責拆分**
-  - `ThumbnailService` 應負責管理資料夾生命週期
+- `✅ 已完成` **`WorkspaceManager` 縮圖目錄職責拆分**
+  - `ThumbnailService`（`core/thumbnail_service.py`）負責管理縮圖資料夾生命週期
+  - `WorkspaceManager` 不再持有 `thumbnail_dir`，僅保留 `render_thumbnail_to_disk()` 低階接口
+  - commit: refactor(core): 建立 ThumbnailService，WorkspaceManager 縮圖職責拆分
 
-- `📌 規劃中` **`WorkspaceSnapshot.pages` 改為 `list[PageSnapshot]` dataclass**
+- `✅ 已完成` **`WorkspaceSnapshot.pages` 改為 `list[PageSnapshot]` dataclass**
+  - `PageSnapshot` dataclass 包含全部欄位：index / page_id / source_doc_id / source / source_page_index / label / base_rotation / rotation_delta / effective_rotation / thumb_path
+  - `__getitem__` 保持向後相容（允許 `snapshot.pages[i]["label"]`）
+  - commit: feat(models): PageSnapshot dataclass + WorkspaceSnapshot 強型別化
 
 ---
 
 ## 🧪 測試覆蓋率提升
 
 - `✅ 已完成` **`test_presenter.py`** — MockView 不啟動 Qt，覆蓋 load_pdfs / rotate / undo 邏輯
-- `📌 規劃中` **`ExportOptions` 死角測試**
-- `📌 規劃中` **`WorkspaceManager` 邊界條件測試**
-- `📌 規劃中` **`_expand_labels()` 單元測試**（羅馬字 R/r、字母 A/a、純前置）
-- `📌 規劃中` **新增 `test_export_service.py`**
+- `✅ 已完成` **`ExportOptions` 死角測試** — `test_export_service.py` `ExportOptionsValidationTests`
+- `✅ 已完成` **`WorkspaceManager` 邊界條件測試** — 空輸入、越界索引、空操作等情境
+- `✅ 已完成` **`_expand_labels()` 單元測試** — 羅馬字 R/r、字母 A/a、純前置、多段規則、缺 startpage、越界等 14 個案例
+- `✅ 已完成` **新增 `test_export_service.py`** — ExportService / ExportOptions / export_selected / can_export 完整覆蓋
+- `✅ 已完成` **`open_pdfs()` tuple 回傳測試** — 成功 / 部分失敗 / 全失敗 / 空輸入 四情境
 - `📌 規劃中` **引入 `pytest` + `pytest-cov`，目標行覆蓋率 ≥ 80%**
 
 ---
 
 ## ⚙️ CI/CD 與 DevOps
 
-- `📌 規劃中` **新增 GitHub Actions workflow `.github/workflows/ci.yml`**
+- `✅ 已完成` **`.github/workflows/ci.yml`**
   - 觸發條件：push main / PR，Python matrix 3.11 + 3.12
   - 步驟：`pytest` → `ruff check` → `mypy`
-- `📌 規劃中` **`ruff.toml`：E / F / I / UP 規則**
-- `📌 規劃中` **`mypy`：`core/` strict mode**
+  - 設定單一真實來源：`pyproject.toml`（無重複配置）
+- `✅ 已完成` **`ruff` 規則：E / F / I / UP**（整合至 `pyproject.toml [tool.ruff.lint]`）
+- `✅ 已完成` **`mypy` `core/` strict mode**（整合至 `pyproject.toml [tool.mypy]`）
 
 ---
 
@@ -216,7 +223,7 @@ tests/test_workspace.py  ← 圖片相關測試案例
 - `📌 規劃中` **保留書簽（TOC）**— `ExportOptions.keep_bookmarks`
 - `📌 規劃中` **保留附件（`keep_attachments`）**
 - `📌 規劃中` **保留互動表單（`keep_forms`）**
-- `📌 規劃中` **子資料夾遞迴揃描**
+- `📌 規劃中` **子資料夾遞迴掃描**
 - `📌 規劃中` **匯出前 Preflight 報告**（缺字型、頁面尺寸不一致）
 
 ---
@@ -241,7 +248,7 @@ tests/test_workspace.py  ← 圖片相關測試案例
 
 - `📌 規劃中` **浮水印／頁碼 Stamp**
 - `📌 規劃中` **裁切框（Crop Box）視覺編輯**
-- `📌 規劃中` **監看資料夾／揃描佇列**
+- `📌 規劃中` **監看資料夾／掃描佇列**
 - `📌 規劃中` **多語言 i18n 支援**
 
 ---
@@ -263,3 +270,9 @@ tests/test_workspace.py  ← 圖片相關測試案例
   - `export_pages()` 移除 `getattr()`，改用 ExportOptions 直接屬性存取
   - `_page_rotations()` N+1 問題修復（列表推導式）
   - 新增 `pyproject.toml` 版本上下界鎖定 + dev 依賴群組
+- **中優先度完成（2026-05-08）**：
+  - `ThumbnailService` 建立，WorkspaceManager 縮圖職責拆分
+  - `PageSnapshot` dataclass + `WorkspaceSnapshot` 強型別化
+  - 全套測試補齊（ExportOptions / WorkspaceManager 邊界 / _expand_labels / test_export_service / open_pdfs tuple）
+  - CI/CD（`.github/workflows/ci.yml`）：pytest + ruff + mypy，Python 3.11/3.12 matrix
+  - 縮圖載入失敗顯示修正：FAILED 狀態改以紅色警告文字呈現

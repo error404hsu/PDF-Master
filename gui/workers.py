@@ -1,5 +1,6 @@
 # 背景執行緒模組 — 縮圖與高解析預覽的 QRunnable Worker
 import logging
+from pathlib import Path
 
 from PySide6.QtCore import QRunnable, QObject, Signal, Slot
 from PySide6.QtGui import QImage
@@ -17,9 +18,12 @@ class WorkerSignals(QObject):
 
 
 class ThumbnailWorker(QRunnable):
-    """Renders off the UI thread; completion applies ``thumb_path`` on the main thread only."""
+    """在背景執行緒渲染縮圖；完成後透過 Signal 通知主執行緒更新 UI。
 
-    def __init__(self, workspace, page, zoom: float):
+    縮圖輸出路徑遵循 ThumbnailService 規則：{thumbnail_dir}/{page_id}.png。
+    """
+
+    def __init__(self, workspace, page, zoom: float, thumbnail_dir: Path | None = None):
         super().__init__()
         self.workspace = workspace
         self.page_id = page.page_id
@@ -28,6 +32,16 @@ class ThumbnailWorker(QRunnable):
         self.rotation_at_start = page.effective_rotation
         self.zoom = zoom
         self.signals = WorkerSignals()
+        # 若外部提供 thumbnail_dir，直接使用；否則使用 page.thumb_path 所在目錄
+        # 最終 fallback：使用系統暫存目錄
+        if thumbnail_dir is not None:
+            self._output_path = thumbnail_dir / f"{page.page_id}.png"
+        elif page.thumb_path is not None:
+            self._output_path = page.thumb_path
+        else:
+            import tempfile
+            tmp = Path(tempfile.gettempdir()) / "pdfmaster_thumbs"
+            self._output_path = tmp / f"{page.page_id}.png"
 
     @Slot()
     def run(self):
@@ -38,6 +52,7 @@ class ThumbnailWorker(QRunnable):
                 source_page_index=self.source_page_index,
                 final_rotation=self.rotation_at_start,
                 zoom=self.zoom,
+                output_path=self._output_path,
             )
             self.signals.thumbnail_finished.emit(
                 self.page_id, str(path), self.rotation_at_start
