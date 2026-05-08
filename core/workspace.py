@@ -9,6 +9,7 @@ from .models import (
     ExportOptions,
     ExportPage,
     PageRef,
+    PageSnapshot,
     PdfInspectionResult,
     SourcePdf,
     WorkspaceSnapshot,
@@ -20,11 +21,15 @@ logger = logging.getLogger(__name__)
 
 
 class WorkspaceManager:
-    def __init__(self, backend: PdfBackend, thumbnail_dir: Path):
-        self.backend = backend
-        self.thumbnail_dir = Path(thumbnail_dir)
-        self.thumbnail_dir.mkdir(parents=True, exist_ok=True)
+    """核心工作區管理員。
 
+    職責：PDF 頁面集合的增刪移轉，以及匯出計畫建構。
+    縮圖目錄生命週期由 ThumbnailService 全權負責，
+    本類別不再持有 thumbnail_dir，亦不自行建立資料夾。
+    """
+
+    def __init__(self, backend: PdfBackend):
+        self.backend = backend
         self.source_pdfs: dict[str, SourcePdf] = {}
         self._inspection_cache: dict[str, PdfInspectionResult] = {}
         self.pages: list[PageRef] = []
@@ -152,12 +157,16 @@ class WorkspaceManager:
         source_page_index: int,
         final_rotation: int,
         zoom: float,
+        output_path: Path,
     ) -> Path:
-        """Write a thumbnail PNG without mutating any ``PageRef`` (thread-safe for callers)."""
+        """將縮圖渲染至指定路徑並回傳（不修改任何 PageRef）。
+
+        output_path 由呼叫端（ThumbnailService）負責決定，
+        WorkspaceManager 本身不持有縮圖目錄。
+        """
         if zoom <= 0:
             raise ValueError("zoom must be greater than 0")
 
-        output_path = self.thumbnail_dir / f"{page_id}.png"
         return self.backend.render_thumbnail(
             source_path=Path(source_path),
             page_index=source_page_index,
@@ -165,24 +174,6 @@ class WorkspaceManager:
             output_path=output_path,
             zoom=zoom,
         )
-
-    def render_thumbnail(self, index: int, zoom: float = 0.4) -> Path:
-        self.validate_page_indices([index])
-
-        if zoom <= 0:
-            raise ValueError("zoom must be greater than 0")
-
-        page = self.pages[index]
-        rendered = self.render_thumbnail_to_disk(
-            page_id=page.page_id,
-            source_path=page.source_path,
-            source_page_index=page.source_page_index,
-            final_rotation=page.effective_rotation,
-            zoom=zoom,
-        )
-
-        page.thumb_path = rendered
-        return rendered
 
     def build_export_plan(self) -> list[ExportPage]:
         return [
@@ -265,22 +256,21 @@ class WorkspaceManager:
         }
 
     def snapshot(self) -> WorkspaceSnapshot:
-        pages = []
-        for index, page in enumerate(self.pages):
-            pages.append(
-                {
-                    "index": index,
-                    "page_id": page.page_id,
-                    "source_doc_id": page.source_doc_id,
-                    "source": page.source_path.name,
-                    "source_page_index": page.source_page_index,
-                    "label": page.source_page_label,
-                    "base_rotation": page.base_rotation,
-                    "rotation_delta": page.rotation_delta,
-                    "effective_rotation": page.effective_rotation,
-                    "thumb_path": str(page.thumb_path) if page.thumb_path else None,
-                }
+        pages: list[PageSnapshot] = [
+            PageSnapshot(
+                index=index,
+                page_id=page.page_id,
+                source_doc_id=page.source_doc_id,
+                source=page.source_path.name,
+                source_page_index=page.source_page_index,
+                label=page.source_page_label,
+                base_rotation=page.base_rotation,
+                rotation_delta=page.rotation_delta,
+                effective_rotation=page.effective_rotation,
+                thumb_path=str(page.thumb_path) if page.thumb_path else None,
             )
+            for index, page in enumerate(self.pages)
+        ]
 
         return WorkspaceSnapshot(
             source_count=len(self.source_pdfs),
@@ -304,7 +294,7 @@ class WorkspaceManager:
             raise WorkspaceError("page index out of range")
 
     @staticmethod
-    def _expand_labels(page_count: int, label_rules: list[dict] | None) -> list[str]:
+    def _expand_labels(page_count: int, label_rules: list[dict] | None) -> list[str]:  # type: ignore[type-arg]
         if page_count <= 0:
             return []
 
@@ -334,7 +324,7 @@ class WorkspaceManager:
                 number //= 26
             return "".join(reversed(chars))
 
-        valid_rules: list[dict] = []
+        valid_rules: list[dict] = []  # type: ignore[type-arg]
         for rule in label_rules:
             if "startpage" not in rule:
                 continue
