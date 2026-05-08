@@ -12,13 +12,11 @@ import os
 import shutil
 import sys
 from pathlib import Path
-from typing import List
 
-from PySide6.QtCore import Qt, QModelIndex, QThreadPool
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont, QDragEnterEvent, QDropEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
-    QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -61,20 +59,19 @@ class MainWindow(QMainWindow):
         self.setAcceptDrops(True)
 
         self.thumb_path = Path("./.thumbnails")
-        self.thumb_path.mkdir(exist_ok=True)
 
-        # 建立服務層對象
+        # 建立服務層對象：
+        # WorkspaceManager 不再需要 thumbnail_dir 參數
         self.backend = PyMuPdfBackend()
-        self.workspace = WorkspaceManager(self.backend, self.thumb_path)
-        self.thumb_service = ThumbnailService(self.workspace)
+        self.workspace = WorkspaceManager(self.backend)
+        # ThumbnailService 接管縮圖目錄生命週期
+        self.thumb_service = ThumbnailService(self.workspace, self.thumb_path)
         self.export_service = ExportService(self.workspace)
 
         self.history = SnapshotHistory(max_entries=20)
 
-        # 建立 Model（View 拥有，Presenter 需要取得其引用）
         self.model = PdfPageModel(self.workspace, self.thumb_service)
 
-        # 建立 Presenter，將 self 作為 IMainView 傳入
         self.presenter = MainPresenter(
             view=self,
             workspace=self.workspace,
@@ -104,7 +101,6 @@ class MainWindow(QMainWindow):
         self._update_history_buttons()
 
     def refresh_view(self) -> None:
-        """Presenter 要求重整縮圖時呼叫。"""
         self.update_status()
 
     def get_selected_rows(self) -> list[int]:
@@ -195,7 +191,9 @@ class MainWindow(QMainWindow):
 
         return header
 
-    def _make_button(self, text: str, width: int, height: int, variant: str = "base") -> QPushButton:
+    def _make_button(
+        self, text: str, width: int, height: int, variant: str = "base"
+    ) -> QPushButton:
         btn = QPushButton(text)
         btn.setFixedSize(width, height)
         if variant == "danger":
@@ -260,7 +258,7 @@ class MainWindow(QMainWindow):
     # 狀態與按鈕更新
     # ------------------------------------------------------------------
 
-    def update_status(self, *args) -> None:
+    def update_status(self, *args: object) -> None:
         total = self.model.rowCount()
         selected = len(self.get_selected_rows())
         self.footer.setText(f" 總計 {total} 頁 | 已選取 {selected} 頁")
@@ -306,7 +304,7 @@ class MainWindow(QMainWindow):
             return
         super().dropEvent(event)
 
-    def closeEvent(self, event) -> None:
+    def closeEvent(self, event) -> None:  # type: ignore[override]
         try:
             if self.thumb_path.exists():
                 shutil.rmtree(self.thumb_path, ignore_errors=True)

@@ -54,15 +54,14 @@ class MainPresenter:
     # 內部輔助
     # ------------------------------------------------------------------
 
-    def _capture_before_change(self) -> list:
+    def _capture_before_change(self) -> list:  # type: ignore[type-arg]
         return copy.deepcopy(self._workspace.pages)
 
-    def _commit_history(self, before_snapshot: list) -> None:
+    def _commit_history(self, before_snapshot: list) -> None:  # type: ignore[type-arg]
         self._history.push_snapshot(before_snapshot)
         self._view.set_status(self._status_text())
-        # 通知 View 更新按鈕狀態（透過 refresh_view 們汻完成）
 
-    def _restore_pages(self, restored_pages) -> None:
+    def _restore_pages(self, restored_pages: list | None) -> None:  # type: ignore[type-arg]
         if restored_pages is None:
             return
         self._workspace.pages = restored_pages
@@ -75,23 +74,23 @@ class MainPresenter:
         selected = len(self._view.get_selected_rows())
         return f" 總計 {total} 頁 | 已選取 {selected} 頁"
 
-    def _confirm_encrypted_sources(self, page_indices=None) -> bool:
+    def _confirm_encrypted_sources(self, page_indices: list[int] | None = None) -> bool:
         enc = self._workspace.encrypted_used_sources(page_indices)
         if not enc:
             return True
         names = "\n".join(f"• {s.path.name}" for s in enc)
         answer = QMessageBox.warning(
             None,
-            "偉測到加密或需密碼的來源",
+            "偵測到加密或需密碼的來源",
             "下列來源在編目時標示為加密文件。若未事先以密碼解鎖，合併結果可能不完整或匯出失敗：\n\n"
-            f"{names}\n\n付要繼續匯出？",
+            f"{names}\n\n是否要繼續匯出？",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
         return answer == QMessageBox.StandardButton.Yes
 
     # ------------------------------------------------------------------
-    # 公開 API（對應原 MainWindow on_* 方法）
+    # 公開 API
     # ------------------------------------------------------------------
 
     def load_pdfs(self, files: list[str]) -> None:
@@ -100,10 +99,23 @@ class MainPresenter:
             return
         before = self._capture_before_change()
         try:
-            self._workspace.open_pdfs(files)
+            added_doc_ids, failed_paths = self._workspace.open_pdfs(files)
         except Exception as e:
             self._view.show_error("開啟 PDF 失敗", str(e))
             return
+
+        # 從 open_pdfs() 解包 failed_paths，告知用戶哪些檔案失敗
+        if failed_paths:
+            names = "\n".join(f"• {p.name}" for p in failed_paths)
+            self._view.show_error(
+                "部分檔案無法開啟",
+                f"以下 {len(failed_paths)} 個檔案載入失敗，其餘頁面已正常加入：\n\n{names}",
+            )
+
+        # 即使部分失敗，只要有成功載入的頁面就更新 UI
+        if not added_doc_ids:
+            return
+
         self._commit_history(before)
         self._model.refresh_all()
         self._view.set_status(self._status_text())
@@ -126,7 +138,7 @@ class MainPresenter:
             QMessageBox.information(
                 None,
                 "開啟資料夾",
-                "此資料夾內沒有找到 PDF 檔案（僅揃掃一層目錄，不含子資料夾）。",
+                "此資料夾內沒有找到 PDF 檔案（僅揃揃一層目錄，不含子資料夾）。",
             )
             return
         self.load_pdfs(files)
@@ -241,10 +253,6 @@ class MainPresenter:
     def redo(self) -> None:
         restored_pages = self._history.redo(self._workspace.pages)
         self._restore_pages(restored_pages)
-
-    # ------------------------------------------------------------------
-    # 改變後更新按鈕可用狀態（由 View 實作預算）
-    # ------------------------------------------------------------------
 
     def can_undo(self) -> bool:
         return self._history.can_undo()
