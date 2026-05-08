@@ -1,6 +1,6 @@
 # PDF Master — 改善計畫與實作清單
 
-標示說明：`✅ 已完成` / `🛧 進行中` / `📌 規劃中` / `💡 建議`
+標示說明：`✅ 已完成` / `🚧 進行中` / `📌 規劃中` / `💡 建議`
 
 實作時請同步更新本檔與 README.md。
 
@@ -64,9 +64,8 @@ SUPPORTED_IMAGE_SUFFIXES = frozenset(
 def inspect_image(self, path: Path) -> ImageInspectionResult:
     import fitz
     path = Path(path)
-    # fitz.open() 可直接開啟圖片，多頁 TIFF 會自動展開多頁
     with fitz.open(path) as doc:
-        page_count = doc.page_count  # 多頁 TIFF 為幀數
+        page_count = doc.page_count
         first_page = doc.load_page(0)
         rect = first_page.rect
         return ImageInspectionResult(
@@ -88,85 +87,43 @@ IMAGE_SUFFIXES = frozenset(
 def open_files(
     self, paths: Iterable[str | Path]
 ) -> tuple[list[str], list[Path]]:
-    """自動依副檔名將 PDF 或圖片加入工作區。
-    回傳 (added_doc_ids, failed_paths)。
-    """
     added_ids: list[str] = []
     failed: list[Path] = []
-
     for raw_path in paths:
         path = Path(raw_path)
         try:
             if path.suffix.lower() in IMAGE_SUFFIXES:
-                ids = self._open_image(path)   # 圖片路徑
+                ids = self._open_image(path)
             else:
-                ids = self._open_pdf(path)     # PDF 路徑（原邏輯）
+                ids = self._open_pdf(path)
             added_ids.extend(ids)
         except Exception:
             failed.append(path)
-
     return added_ids, failed
-
-def _open_image(self, path: Path) -> list[str]:
-    """將圖片檔轉為臨時 PDF bytes 再進入工作區。多頁 TIFF 會展開多頁。"""
-    result = self.backend.inspect_image(path)
-    doc_id = new_id()
-    inspection = PdfInspectionResult(
-        path=path,
-        page_count=result.page_count,
-        metadata={},
-        page_rotations=[0] * result.page_count,
-    )
-    self._inspection_cache[doc_id] = inspection
-    self.source_pdfs[doc_id] = SourcePdf(
-        doc_id=doc_id,
-        path=path,
-        page_count=result.page_count,
-    )
-    for page_index in range(result.page_count):
-        self.pages.append(
-            PageRef(
-                page_id=new_id(),
-                source_doc_id=doc_id,
-                source_path=path,
-                source_page_index=page_index,
-            )
-        )
-    return [doc_id]
 ```
 
 #### Step 5 — `adapters/pymupdf_backend.py`：`export_pages()` 支援圖片路徑
 
-`fitz.open()` 對圖片的字底識別即可直接讀入，選從 `insert_pdf` 前先轉為 PDF bytes：
-
 ```python
-# 在 export_pages() 的圖片路徑中取代直接 fitz.open(source_path)
 def _open_source_as_pdf(self, source_path: Path):
-    """圖片或 PDF 都回傳可 insert_pdf 的 fitz.Document（統一介面）"""
     suffix = source_path.suffix.lower()
     if suffix in SUPPORTED_IMAGE_SUFFIXES:
-        img_doc = self.fitz.open(source_path)     # 開啟圖片
-        pdf_bytes = img_doc.convert_to_pdf()      # 轉為 PDF bytes
+        img_doc = self.fitz.open(source_path)
+        pdf_bytes = img_doc.convert_to_pdf()
         img_doc.close()
-        return self.fitz.open("pdf", pdf_bytes)   # 回傳 PDF 文件物件
-    return self.fitz.open(source_path)            # 原生 PDF
+        return self.fitz.open("pdf", pdf_bytes)
+    return self.fitz.open(source_path)
 ```
 
-將 `export_pages()` 中的 `self.fitz.open(source_path)` 替換為 `self._open_source_as_pdf(source_path)`，其餘邏輯不變。
-
-#### Step 6 — `gui_main.py`：檔案選擇對話框加入圖片 filter
+#### Step 6 — `gui/presenter.py`：`on_add_pdf` 檔案選擇加入圖片 filter
 
 ```python
-# 原來的 PDF filter
-filters = "PDF Files (*.pdf)"
-
-# 改為
- filters = "All Supported Files (*.pdf *.jpg *.jpeg *.png *.tif *.tiff *.bmp *.webp *.gif);;PDF Files (*.pdf);;Image Files (*.jpg *.jpeg *.png *.tif *.tiff *.bmp *.webp *.gif)"
+filters = "All Supported Files (*.pdf *.jpg *.jpeg *.png *.tif *.tiff *.bmp *.webp *.gif);;PDF Files (*.pdf);;Image Files (*.jpg *.jpeg *.png *.tif *.tiff *.bmp *.webp *.gif)"
 ```
 
 ### 測試項目
 
-- `open_files()` 傳入 JPG 应正常產生一頁
+- `open_files()` 傳入 JPG 應正常產生一頁
 - `open_files()` 傳入多頁 TIFF 應產生對應頁數
 - 混入 PDF + JPG 再匯出，頁序應和工作區順序一致
 - 損壞圖片在 `open_files()` 中應列入 `failed_paths`，不中斷其餘對象
@@ -178,7 +135,7 @@ core/models.py           ← 新增 ImageInspectionResult
 core/protocols.py        ← 新增 inspect_image()
 core/workspace.py        ← open_files() 取代 open_pdfs()
 adapters/pymupdf_backend.py  ← inspect_image() + _open_source_as_pdf()
-gui_main.py              ← 檔案對話框 filter
+gui/presenter.py         ← 檔案對話框 filter
 tests/test_workspace.py  ← 圖片相關測試案例
 ```
 
@@ -188,12 +145,12 @@ tests/test_workspace.py  ← 圖片相關測試案例
 
 ### 高優先度
 
-- `📌 規劃中` **錯誤隔離：`open_pdfs()` 批次處理改為逐檔 try/except**
+- `📌 規劃中` **錯誤隔離：`open_pdfs()` 批次處理改為逆檔 try/except**
   - 目前任一 PDF 損壞就中斷整個批次
   - 建議回傳 `(added_ids, failed_paths)` tuple，UI 層再核對失敗清單對用戶提示
   - 相關檔案：`core/workspace.py` `open_pdfs()`
 
-- `🛧 進行中` **GUI 分層：將 `gui_main.py`（40KB）拆分成 MVC/MVP**
+- `✅ Phase 2 完成` **GUI 分層：MVP 介面解耦**
   - **Phase 1 完成**（`gui/` 套件已創建）
     - `gui/styles.py` — 集中管理所有 QSS 樣式常數與色票
     - `gui/workers.py` — `ThumbnailWorker` / `HighResWorker` 背景執行緒
@@ -201,7 +158,12 @@ tests/test_workspace.py  ← 圖片相關測試案例
     - `gui/models.py`  — `SnapshotHistory` / `PdfPageModel` Qt 資料模型
     - `gui/views.py`   — `PageCardDelegate` / `PageListView` 視圖元件
     - `gui_main.py` 精簡化：僅保留 `MainWindow` 骨架與 `main()` 入口
-  - **Phase 2 規劃中**：引入 `gui/interfaces.py`（Protocol）與 `gui/presenter.py`（MVP 分層）
+  - **Phase 2 完成**：引入 `gui/interfaces.py`（Protocol）與 `gui/presenter.py`（MVP 分層）
+    - `gui/interfaces.py` — `IMainView` / `IMainPresenter` `typing.Protocol` 定義
+    - `gui/presenter.py` — `MainPresenter` 承載所有 `on_*` / `load_pdfs` / `undo` / `redo` 業務邏輯
+    - `MainWindow` 實作 `IMainView`，僅保留純 UI 建構與 Signal 轉中
+    - `tests/test_presenter.py` — `MockView` 不啟動 Qt 的單元測試
+  - **MVP 架構說明**：View（MainWindow）實作 `IMainView` Protocol，僅負責 UI 建構與事件轉發；Presenter（MainPresenter）透過 `IMainView` 介面呼叫 View，不持有任何 `QWidget` 強引用，可在純 Python 環境下進行單元測試；Model（`PdfPageModel`）由 View 拥有，Presenter 透過構造子注入。兩者透過 `typing.Protocol` 完全解耦。
   - 目標結構：`views/`（純 UI 元件）、`controllers/`（業務橋接）
   - `core/` 保持完全無 PySide6 依賴
 
@@ -226,6 +188,7 @@ tests/test_workspace.py  ← 圖片相關測試案例
 
 ## 🧪 測試覆蓋率提升
 
+- `✅ 已完成` **`test_presenter.py`** — MockView 不啟動 Qt，覆蓋 load_pdfs / rotate / undo 邏輯
 - `📌 規劃中` **`ExportOptions` 死角測試**
 - `📌 規劃中` **`WorkspaceManager` 邊界條件測試**
 - `📌 規劃中` **`_expand_labels()` 單元測試**（羅馬字 R/r、字母 A/a、純前置）
@@ -246,7 +209,7 @@ tests/test_workspace.py  ← 圖片相關測試案例
 
 ## 📦 匯出與文件結構
 
-- `📌 規劃中` **保留書籤（TOC）**— `ExportOptions.keep_bookmarks`
+- `📌 規劃中` **保留書簽（TOC）**— `ExportOptions.keep_bookmarks`
 - `📌 規劃中` **保留附件（`keep_attachments`）**
 - `📌 規劃中` **保留互動表單（`keep_forms`）**
 - `📌 規劃中` **子資料夾遞迴揃描**
@@ -273,7 +236,7 @@ tests/test_workspace.py  ← 圖片相關測試案例
 ## ✨ 進階功能（選做）
 
 - `📌 規劃中` **浮水印／頁碼 Stamp**
-- `📌 規劃中` **裁切框（Crop Box）視覚編輯**
+- `📌 規劃中` **裁切框（Crop Box）視覺編輯**
 - `📌 規劃中` **監看資料夾／揃描佇列**
 - `📌 規劃中` **多語言 i18n 支援**
 
@@ -289,3 +252,5 @@ tests/test_workspace.py  ← 圖片相關測試案例
 - `FakeBackend` + `test_workspace.py` 基礎測試套件
 - DIP 架構：`core/protocols.py` PdfBackend Protocol
 - **GUI 分層 Phase 1**：`gui/` 套件拆分（styles / workers / dialogs / models / views）
+- **GUI 分層 Phase 2**：MVP 介面解耦（interfaces / presenter）+ Presenter 單元測試
+- **修復** `gui_main.py` 重複 `QKeySequence` import（`QtCore` 移除，保留 `QtGui`）
