@@ -184,3 +184,7 @@
 - **設定系統 + 輸出改版（2026-05-13）**：AppSettings、SettingsDialog、「匯出」→「輸出」、輸出單頁模式、不再每次彈窗
 - **輸出增強（2026-05-13）**：輸出後開資料夾、單頁檔名樣板、壓縮等級可調、ExportOptions.deflate_level
 - **頁碼修正（2026-05-13）**：合併後 PDF 依畫面排列順序重新連續編號
+- **輸出單頁 Toolbar 按鈕（2026-05-13）**：獨立 QAction（key: `export_single`），僅有選取時啟用
+- **右鍵選單補強（2026-05-13）**：新增「📄 輸出單頁」選項，連接至 `presenter.on_export_single_pages()`
+- **設定簡化（2026-05-13）**：移除 SettingsDialog 中「每頁獨立 PDF」冗餘勾選項，單頁樣板欄位永遠啟用；`gui/settings.py` 移除 `export_as_single_pages` 屬性
+- **圖示補強（2026-05-13）**：補齊 `export_single`、`settings` 齒輪 SVG fallback
