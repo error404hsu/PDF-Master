@@ -229,15 +229,25 @@ class PyMuPdfBackend:
             pass
 
     def _apply_page_labels(self, out_doc, pages: list[ExportPage]) -> None:
+        """依畫面排列順序設定連續頁碼（1, 2, 3, …）。
+
+        使用單一規則覆蓋整份輸出 PDF：
+        - startpage=0：從第一頁開始套用
+        - style="D"：阿拉伯數字（Decimal）
+        - firstpagenum=1：從 1 開始編號
+        - prefix=""：無前綴
+
+        不再沿用 source_page_label（來源原始頁碼），
+        確保頁碼忠實反映使用者在畫面上的排列順序。
+        """
         try:
             labels = [
                 {
-                    "startpage": page_index,
-                    "prefix": export_page.source_page_label or "",
-                    "style": "",
+                    "startpage": 0,
+                    "style": "D",
                     "firstpagenum": 1,
+                    "prefix": "",
                 }
-                for page_index, export_page in enumerate(pages)
             ]
             out_doc.set_page_labels(labels)
         except Exception:
