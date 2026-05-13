@@ -9,6 +9,7 @@ jobs:
   test:
     name: "Python ${{ matrix.python-version }}"
     runs-on: ubuntu-latest
+    # 提早強制 Node.js 24，避免 Actions 的過期警告
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     strategy:
@@ -25,6 +26,12 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
+
+      # === 新增：安裝 Ubuntu 系統底層缺乏的 Qt (PySide6) 依賴 ===
+      - name: Install Qt system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0
 
       - name: Install dependencies
         run: |
