@@ -1,7 +1,7 @@
 """gui/presenter.py — MainPresenter
 
 Presenter 層：接受 IMainView、workspace、backend、export_service，
-負責所有 on_* / load_pdfs / undo / redo 業務邏輯。
+負責所有 on_* / load_files / undo / redo 業務邏輯。
 
 限制：本模組不得 import 任何 QWidget 子類別。
 """
@@ -16,9 +16,11 @@ from PySide6.QtCore import QModelIndex, QThreadPool
 from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QMessageBox
 from PySide6.QtCore import Qt
 
-from gui.dialogs import ExportPdfDialog, PreviewDialog
+from core.models import ExportOptions
+from gui.dialogs import PreviewDialog, SettingsDialog
 from gui.interfaces import IMainView
 from gui.models import PAGE_ROLE, SnapshotHistory
+from gui.settings import AppSettings
 from gui.workers import HighResWorker
 
 if TYPE_CHECKING:
@@ -29,14 +31,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# 檔案對話框 filter（PDF + 所有支援圖片格式）
 _FILE_FILTER = (
     "All Supported Files (*.pdf *.jpg *.jpeg *.png *.tif *.tiff *.bmp *.webp *.gif);;"
     "PDF Files (*.pdf);;"
     "Image Files (*.jpg *.jpeg *.png *.tif *.tiff *.bmp *.webp *.gif)"
 )
-
-# 資料夾掃描時納入的副檔名（小寫）
 _SUPPORTED_SUFFIXES = frozenset(
     {".pdf", ".jpg", ".jpeg", ".png", ".tiff", ".tif", ".bmp", ".webp", ".gif"}
 )
@@ -61,6 +60,7 @@ class MainPresenter:
         self._model = model
         self._history = history
         self._thread_pool = QThreadPool.globalInstance()
+        self._settings = AppSettings()
 
     # ------------------------------------------------------------------
     # 內部輔助
@@ -86,6 +86,19 @@ class MainPresenter:
         selected = len(self._view.get_selected_rows())
         return f" 總計 {total} 頁 | 已選取 {selected} 頁"
 
+    def _current_export_options(self) -> ExportOptions:
+        """從 AppSettings 組出 ExportOptions（不彈對話框）。"""
+        s = self._settings
+        return ExportOptions(
+            keep_metadata=s.keep_metadata,
+            keep_page_labels=s.keep_page_labels,
+            metadata_policy=s.metadata_policy,  # type: ignore[arg-type]
+        )
+
+    def _default_save_dir(self) -> str:
+        d = self._settings.default_output_dir
+        return d if d and Path(d).is_dir() else ""
+
     def _confirm_encrypted_sources(self, page_indices: list[int] | None = None) -> bool:
         enc = self._workspace.encrypted_used_sources(page_indices)
         if not enc:
@@ -94,23 +107,26 @@ class MainPresenter:
         answer = QMessageBox.warning(
             None,
             "偵測到加密或需密碼的來源",
-            "下列來源在編目時標示為加密文件。若未事先以密碼解鎖，合併結果可能不完整或匯出失敗：\n\n"
-            f"{names}\n\n是否要繼續匯出？",
+            "下列來源在編目時標示為加密文件。若未事先以密碼解鎖，合併結果可能不完整或輸出失敗：\n\n"
+            f"{names}\n\n是否要繼續輸出？",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
         return answer == QMessageBox.StandardButton.Yes
+
+    def _notify_success(self, msg: str) -> None:
+        """依設定決定是顯示 MessageBox 還是靜默 Toast。"""
+        if self._settings.show_export_confirm:
+            QMessageBox.information(None, "輸出成功", msg)
+        else:
+            self._view.show_toast(msg, "success")
 
     # ------------------------------------------------------------------
     # 公開 API
     # ------------------------------------------------------------------
 
     def load_files(self, files: list[str]) -> None:
-        """載入 PDF 與圖片檔案（統一入口）。"""
-        supported = [
-            f for f in files
-            if Path(f).suffix.lower() in _SUPPORTED_SUFFIXES
-        ]
+        supported = [f for f in files if Path(f).suffix.lower() in _SUPPORTED_SUFFIXES]
         if not supported:
             return
         before = self._capture_before_change()
@@ -141,13 +157,15 @@ class MainPresenter:
 
     def on_add_pdf(self) -> None:
         files, _ = QFileDialog.getOpenFileNames(
-            None, "開啟 PDF 或圖片", "", _FILE_FILTER
+            None, "開啟 PDF 或圖片", self._default_save_dir(), _FILE_FILTER
         )
         if files:
             self.load_files(files)
 
     def on_add_folder(self) -> None:
-        directory = QFileDialog.getExistingDirectory(None, "選擇含 PDF／圖片的資料夾", "")
+        directory = QFileDialog.getExistingDirectory(
+            None, "選擇含 PDF／圖片的資料夾", self._default_save_dir()
+        )
         if not directory:
             return
         root = Path(directory)
@@ -158,8 +176,7 @@ class MainPresenter:
         )
         if not files:
             QMessageBox.information(
-                None,
-                "開啟資料夾",
+                None, "開啟資料夾",
                 "此資料夾內沒有找到支援的 PDF 或圖片檔案（僅掃描一層目錄，不含子資料夾）。",
             )
             return
@@ -221,13 +238,15 @@ class MainPresenter:
         self._view.refresh_view()
 
     def on_export_pdf(self) -> None:
+        """輸出全部頁面為合併 PDF（不再彈出選項視窗，直接讀設定）。"""
         if not self._workspace.pages:
             return
-        dlg = ExportPdfDialog(None, export_subset=False)
-        if dlg.exec() != QDialog.Accepted:
-            return
-        options = dlg.export_options()
-        path, _ = QFileDialog.getSaveFileName(None, "匯出 PDF", "合併結果.pdf", "PDF 檔案 (*.pdf)")
+        options = self._current_export_options()
+        save_dir = self._default_save_dir()
+        path, _ = QFileDialog.getSaveFileName(
+            None, "輸出 PDF", str(Path(save_dir) / "合併結果.pdf") if save_dir else "合併結果.pdf",
+            "PDF 檔案 (*.pdf)"
+        )
         if not path:
             return
         if not self._confirm_encrypted_sources(None):
@@ -235,38 +254,82 @@ class MainPresenter:
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
             self._export_service.export(path, options)
-            QMessageBox.information(None, "成功", f"匯出成功至：\n{path}")
+            self._notify_success(f"輸出成功至：\n{path}")
         except Exception as e:
-            self._view.show_error("匯出失敗", str(e))
+            self._view.show_error("輸出失敗", str(e))
         finally:
             QApplication.restoreOverrideCursor()
 
     def on_export_selected_pdf(self) -> None:
+        """輸出選取頁面；依設定決定合併為單一 PDF 或拆成單頁輸出。"""
         rows = self._view.get_selected_rows()
         if not rows:
             QMessageBox.information(
-                None,
-                "匯出選取",
-                "請先在縮圖區選取至少一頁，再使用「匯出選取」或 Ctrl+Shift+E。",
+                None, "輸出選取",
+                "請先在縮圖區選取至少一頁，再使用「輸出選取」或 Ctrl+Shift+E。",
             )
             return
-        dlg = ExportPdfDialog(None, export_subset=True)
-        if dlg.exec() != QDialog.Accepted:
-            return
-        options = dlg.export_options()
-        path, _ = QFileDialog.getSaveFileName(None, "匯出選取的頁面", "選取頁面.pdf", "PDF 檔案 (*.pdf)")
-        if not path:
-            return
-        if not self._confirm_encrypted_sources(rows):
-            return
-        QApplication.setOverrideCursor(Qt.WaitCursor)
-        try:
-            self._export_service.export_selected(rows, path, options)
-            QMessageBox.information(None, "成功", f"已匯出 {len(rows)} 頁至：\n{path}")
-        except Exception as e:
-            self._view.show_error("匯出失敗", str(e))
-        finally:
-            QApplication.restoreOverrideCursor()
+
+        options = self._current_export_options()
+
+        if self._settings.export_as_single_pages:
+            # ── 單頁輸出模式：每頁存為獨立 PDF ──
+            save_dir = QFileDialog.getExistingDirectory(
+                None, "選擇單頁 PDF 輸出資料夾", self._default_save_dir()
+            )
+            if not save_dir:
+                return
+            if not self._confirm_encrypted_sources(rows):
+                return
+            QApplication.setOverrideCursor(Qt.WaitCursor)
+            failed: list[str] = []
+            try:
+                for i, row in enumerate(rows):
+                    filename = f"page_{i + 1:03d}.pdf"
+                    out_path = Path(save_dir) / filename
+                    try:
+                        self._export_service.export_selected([row], str(out_path), options)
+                    except Exception as e:
+                        failed.append(f"{filename}: {e}")
+            finally:
+                QApplication.restoreOverrideCursor()
+
+            if failed:
+                self._view.show_error(
+                    "部分頁面輸出失敗",
+                    "\n".join(failed)
+                )
+            else:
+                self._notify_success(
+                    f"已將 {len(rows)} 頁分別輸出至：\n{save_dir}"
+                )
+        else:
+            # ── 合併輸出模式（預設）──
+            save_dir = self._default_save_dir()
+            path, _ = QFileDialog.getSaveFileName(
+                None, "輸出選取頁面",
+                str(Path(save_dir) / "選取頁面.pdf") if save_dir else "選取頁面.pdf",
+                "PDF 檔案 (*.pdf)"
+            )
+            if not path:
+                return
+            if not self._confirm_encrypted_sources(rows):
+                return
+            QApplication.setOverrideCursor(Qt.WaitCursor)
+            try:
+                self._export_service.export_selected(rows, path, options)
+                self._notify_success(f"已輸出 {len(rows)} 頁至：\n{path}")
+            except Exception as e:
+                self._view.show_error("輸出失敗", str(e))
+            finally:
+                QApplication.restoreOverrideCursor()
+
+    def on_open_settings(self) -> None:
+        """開啟設定視窗；關閉後重新讀取設定（含縮圖縮放等即時生效項目）。"""
+        dlg = SettingsDialog(None)
+        dlg.exec()
+        # 重新載入設定（例如縮圖縮放倍率若改變，下次渲染時生效）
+        self._settings = AppSettings()
 
     def undo(self) -> None:
         restored_pages = self._history.undo(self._workspace.pages)

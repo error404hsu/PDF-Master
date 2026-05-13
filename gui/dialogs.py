@@ -1,20 +1,35 @@
-# 對話框模組 — PreviewDialog（高品質預覽）與 ExportPdfDialog（匯出選項）
+"""gui/dialogs.py
+
+對話框模組：
+  - PreviewDialog    高品質預覽
+  - SettingsDialog   應用程式設定（含輸出選項、介面偏好）
+
+原 ExportPdfDialog 已移除：輸出選項改由 SettingsDialog 統一管理，
+不再於每次輸出時彈出詢問視窗。
+"""
 from typing import Optional
 
 from PySide6.QtWidgets import (
     QDialog,
     QVBoxLayout,
+    QHBoxLayout,
     QLabel,
     QScrollArea,
     QCheckBox,
     QComboBox,
     QFormLayout,
     QDialogButtonBox,
+    QGroupBox,
+    QDoubleSpinBox,
+    QFileDialog,
+    QPushButton,
+    QLineEdit,
+    QSizePolicy,
 )
 from PySide6.QtCore import Qt, Slot
 from PySide6.QtGui import QPixmap, QImage, QResizeEvent
 
-from core.models import ExportOptions
+from gui.settings import AppSettings
 from gui.styles import UiStyles
 
 
@@ -73,63 +88,129 @@ class PreviewDialog(QDialog):
         self._update_display()
 
 
-class ExportPdfDialog(QDialog):
-    """Office-oriented merge export: metadata source and page labels (see TODO.md for roadmap)."""
+class SettingsDialog(QDialog):
+    """應用程式設定視窗，包含「輸出設定」與「介面設定」兩個設定方塊。"""
 
-    def __init__(self, parent=None, *, export_subset: bool = False):
+    def __init__(self, parent=None):
         super().__init__(parent)
-        title = "匯出合併 PDF — 選項"
-        if export_subset:
-            title = "匯出選取頁面 — 選項"
-        self.setWindowTitle(title)
+        self.setWindowTitle("設定")
+        self.setMinimumWidth(460)
         self.setModal(True)
 
+        self._settings = AppSettings()
         outer = QVBoxLayout(self)
-        outer.setSpacing(12)
+        outer.setSpacing(16)
+        outer.setContentsMargins(20, 20, 20, 20)
 
-        hint = QLabel(
-            "書籤、附件與互動表單的保留方式將在後續版本提供（詳見專案根目錄 TODO.md）。"
-        )
-        hint.setWordWrap(True)
-        hint.setStyleSheet(f"color: {UiStyles.TEXT_MUTED}; font-size: 9pt;")
-        outer.addWidget(hint)
-
-        form = QFormLayout()
-        self._chk_metadata = QCheckBox("寫入文件資訊（標題、作者等）")
-        self._chk_metadata.setChecked(True)
-        self._chk_labels = QCheckBox("依目前頁序產生頁碼標籤（Page labels）")
-        self._chk_labels.setChecked(True)
-
-        self._policy_combo = QComboBox()
-        self._policy_combo.addItem("沿用順序第一份來源的內容資訊", "first_pdf")
-        self._policy_combo.addItem("沿用順序最末份來源的內容資訊", "last_pdf")
-        self._policy_combo.addItem("清空內容欄位（空白 metadata）", "empty")
-        self._policy_combo.setCurrentIndex(0)
-
-        form.addRow(self._chk_metadata)
-        form.addRow("內容資訊來源：", self._policy_combo)
-        form.addRow(self._chk_labels)
-        outer.addLayout(form)
-
-        self._chk_metadata.toggled.connect(self._sync_policy_enabled)
-        self._sync_policy_enabled(self._chk_metadata.isChecked())
+        outer.addWidget(self._build_export_group())
+        outer.addWidget(self._build_ui_group())
 
         bbox = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
-        bbox.accepted.connect(self.accept)
+        bbox.accepted.connect(self._save_and_accept)
         bbox.rejected.connect(self.reject)
         outer.addWidget(bbox)
 
-    def _sync_policy_enabled(self, on: bool) -> None:
-        self._policy_combo.setEnabled(on)
+    # ------------------------------------------------------------------
+    # 設定方塊：輸出
+    # ------------------------------------------------------------------
 
-    def export_options(self) -> ExportOptions:
-        policy = self._policy_combo.currentData()
-        if not isinstance(policy, str):
-            policy = "first_pdf"
-        return ExportOptions(
-            keep_metadata=self._chk_metadata.isChecked(),
-            keep_page_labels=self._chk_labels.isChecked(),
-            metadata_policy=policy,  # type: ignore[arg-type]
+    def _build_export_group(self) -> QGroupBox:
+        grp = QGroupBox("輸出設定")
+        form = QFormLayout(grp)
+        form.setSpacing(10)
+
+        # 寫入文件資訊
+        self._chk_metadata = QCheckBox("寫入文件資訊（標題、作者等）")
+        self._chk_metadata.setChecked(self._settings.keep_metadata)
+        form.addRow(self._chk_metadata)
+
+        # 內容資訊來源
+        self._policy_combo = QComboBox()
+        self._policy_combo.addItem("沿用順序第一份來源的內容資訊", "first_pdf")
+        self._policy_combo.addItem("沿用順序最末份來源的內容資訊", "last_pdf")
+        self._policy_combo.addItem("清空內容欄位（空白 metadata）", "empty")
+        idx = self._policy_combo.findData(self._settings.metadata_policy)
+        self._policy_combo.setCurrentIndex(max(idx, 0))
+        form.addRow("內容資訊來源：", self._policy_combo)
+
+        # 頁碼標籤
+        self._chk_labels = QCheckBox("依目前頁序產生頁碼標籤（Page labels）")
+        self._chk_labels.setChecked(self._settings.keep_page_labels)
+        form.addRow(self._chk_labels)
+
+        # 輸出單頁模式
+        self._chk_single = QCheckBox(
+            "「輸出選取頁面」時，將每頁拆成獨立 PDF 檔案"
         )
+        self._chk_single.setChecked(self._settings.export_as_single_pages)
+        self._chk_single.setToolTip(
+            "勾選後，選取 N 頁時會輸出 N 個獨立 PDF，\n"
+            "檔名格式：<輸出名稱>_page_001.pdf"
+        )
+        form.addRow(self._chk_single)
+
+        # 輸出後顯示完成提示
+        self._chk_confirm = QCheckBox("輸出完成後顯示成功提示")
+        self._chk_confirm.setChecked(self._settings.show_export_confirm)
+        form.addRow(self._chk_confirm)
+
+        self._chk_metadata.toggled.connect(
+            lambda on: self._policy_combo.setEnabled(on)
+        )
+        self._policy_combo.setEnabled(self._settings.keep_metadata)
+
+        return grp
+
+    # ------------------------------------------------------------------
+    # 設定方塊：介面
+    # ------------------------------------------------------------------
+
+    def _build_ui_group(self) -> QGroupBox:
+        grp = QGroupBox("介面設定")
+        form = QFormLayout(grp)
+        form.setSpacing(10)
+
+        # 預設輸出資料夾
+        dir_row = QHBoxLayout()
+        self._edit_dir = QLineEdit(self._settings.default_output_dir)
+        self._edit_dir.setPlaceholderText("（空白 = 使用上次開啟路徑）")
+        self._edit_dir.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        btn_browse = QPushButton("瀏覽…")
+        btn_browse.setFixedWidth(64)
+        btn_browse.clicked.connect(self._browse_output_dir)
+        dir_row.addWidget(self._edit_dir)
+        dir_row.addWidget(btn_browse)
+        form.addRow("預設輸出資料夾：", dir_row)
+
+        # 縮圖縮放
+        self._spin_zoom = QDoubleSpinBox()
+        self._spin_zoom.setRange(0.2, 1.0)
+        self._spin_zoom.setSingleStep(0.1)
+        self._spin_zoom.setDecimals(1)
+        self._spin_zoom.setValue(self._settings.thumbnail_zoom)
+        self._spin_zoom.setToolTip("調整縮圖品質與大小（0.2 最小最快，1.0 最大最清晰）")
+        form.addRow("縮圖縮放倍率：", self._spin_zoom)
+
+        return grp
+
+    # ------------------------------------------------------------------
+    # 事件
+    # ------------------------------------------------------------------
+
+    def _browse_output_dir(self) -> None:
+        d = QFileDialog.getExistingDirectory(self, "選擇預設輸出資料夾", self._edit_dir.text())
+        if d:
+            self._edit_dir.setText(d)
+
+    def _save_and_accept(self) -> None:
+        s = self._settings
+        s.keep_metadata = self._chk_metadata.isChecked()
+        s.metadata_policy = self._policy_combo.currentData() or "first_pdf"
+        s.keep_page_labels = self._chk_labels.isChecked()
+        s.export_as_single_pages = self._chk_single.isChecked()
+        s.show_export_confirm = self._chk_confirm.isChecked()
+        s.default_output_dir = self._edit_dir.text().strip()
+        s.thumbnail_zoom = self._spin_zoom.value()
+        self.accept()

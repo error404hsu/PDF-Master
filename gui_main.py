@@ -61,7 +61,6 @@ from gui.empty_state import EmptyStateOverlay
 logging.basicConfig(level=logging.INFO, format="%(levelname)s | %(name)s | %(message)s")
 logger = logging.getLogger("gui_main")
 
-# 支援的拖放副檔名
 _SUPPORTED_SUFFIXES = frozenset({
     ".pdf", ".jpg", ".jpeg", ".png",
     ".tiff", ".tif", ".bmp", ".webp", ".gif"
@@ -70,10 +69,6 @@ _SUPPORTED_SUFFIXES = frozenset({
 
 class MainWindow(QMainWindow):
     """MVP View 層—僅負責純 UI 建構與事件轉中。"""
-
-    # ------------------------------------------------------------------
-    # 初始化
-    # ------------------------------------------------------------------
 
     def __init__(self, is_dark: bool = False) -> None:
         super().__init__()
@@ -116,7 +111,6 @@ class MainWindow(QMainWindow):
         QMessageBox.critical(self, title, msg)
 
     def show_toast(self, msg: str, kind: str = "info") -> None:
-        """非阻塞 Toast 通知（kind: info / error / success）。"""
         Toast.show(self, msg, kind)
 
     def set_status(self, text: str) -> None:
@@ -136,17 +130,15 @@ class MainWindow(QMainWindow):
         )
 
     # ------------------------------------------------------------------
-    # 進度條控制（供 Presenter / Worker 呼叫）
+    # 進度條控制
     # ------------------------------------------------------------------
 
     def show_progress(self, value: int = 0, maximum: int = 0) -> None:
-        """顯示進度條；maximum=0 代表不確定進度（跑馬燈）。"""
         self.progress_bar.setMaximum(maximum)
         self.progress_bar.setValue(value)
         self.progress_bar.setVisible(True)
 
     def hide_progress(self) -> None:
-        """隱藏進度條。"""
         self.progress_bar.setVisible(False)
 
     # ------------------------------------------------------------------
@@ -163,10 +155,8 @@ class MainWindow(QMainWindow):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        # QToolBar 由 addToolBar 管理，不加入 main_layout
         self._build_toolbar()
 
-        # 進度條（緊貼 toolbar 下方，預設隱藏）
         self.progress_bar = QProgressBar()
         self.progress_bar.setFixedHeight(4)
         self.progress_bar.setTextVisible(False)
@@ -174,7 +164,6 @@ class MainWindow(QMainWindow):
         self.progress_bar.setVisible(False)
         main_layout.addWidget(self.progress_bar)
 
-        # 頁面列表（含 Empty State overlay）
         list_container = QWidget()
         list_container.setObjectName("list_container")
         list_layout = QVBoxLayout(list_container)
@@ -188,13 +177,11 @@ class MainWindow(QMainWindow):
         )
         list_layout.addWidget(self.view)
 
-        # Empty State 疊加層
         self.empty_overlay = EmptyStateOverlay(list_container)
         self.empty_overlay.setVisible(True)
 
         main_layout.addWidget(list_container, stretch=1)
 
-        # Footer：左側狀態 + 右側快捷鍵提示
         footer_widget = QWidget()
         footer_widget.setFixedHeight(32)
         if self._is_dark:
@@ -228,7 +215,6 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(footer_widget)
 
     def _build_toolbar(self) -> None:
-        """建立 QToolBar 並加入主視窗頂部，取代原本的 QFrame header。"""
         toolbar = QToolBar("主工具列", self)
         toolbar.setIconSize(QSize(18, 18))
         toolbar.setMovable(False)
@@ -267,12 +253,16 @@ class MainWindow(QMainWindow):
         spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         toolbar.addWidget(spacer)
 
-        # --- 匯出按鈕區 ---
-        self.act_export_sel = QAction(AppIcons.get("export_selected"), "匯出選取", self)
-        self.act_export = QAction(AppIcons.get("export"), "匯出結果", self)
+        # --- 輸出按鈕區（原「匯出」改為「輸出」）---
+        self.act_export_sel = QAction(AppIcons.get("export_selected"), "輸出選取", self)
+        self.act_export = QAction(AppIcons.get("export"), "輸出結果", self)
         toolbar.addAction(self.act_export_sel)
         toolbar.addAction(self.act_export)
         toolbar.addSeparator()
+
+        # --- 設定按鈕 ---
+        self.act_settings = QAction(AppIcons.get("settings"), "設定", self)
+        toolbar.addAction(self.act_settings)
 
         self.addToolBar(Qt.TopToolBarArea, toolbar)
         self._toolbar = toolbar
@@ -280,7 +270,6 @@ class MainWindow(QMainWindow):
     def _make_button(
         self, text: str, width: int, height: int, variant: str = "base"
     ) -> QPushButton:
-        """保留以供其他呼叫方使用（向後相容）。"""
         btn = QPushButton(text)
         btn.setFixedSize(width, height)
         if variant == "danger":
@@ -313,6 +302,7 @@ class MainWindow(QMainWindow):
         self.act_delete.triggered.connect(self.presenter.on_delete_pages)
         self.act_export_sel.triggered.connect(self.presenter.on_export_selected_pdf)
         self.act_export.triggered.connect(self.presenter.on_export_pdf)
+        self.act_settings.triggered.connect(self.presenter.on_open_settings)
 
         self.view.doubleClicked.connect(self.presenter.on_page_double_clicked)
         self.view.pages_reordered.connect(self.presenter.on_pages_reordered)
@@ -345,6 +335,11 @@ class MainWindow(QMainWindow):
             QKeySequence("Ctrl+Shift+E"),
             self,
             activated=self.presenter.on_export_selected_pdf,
+        )
+        QShortcut(
+            QKeySequence("Ctrl+,"),
+            self,
+            activated=self.presenter.on_open_settings,
         )
 
     # ------------------------------------------------------------------
@@ -423,16 +418,11 @@ def main() -> None:
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
 
-    # 建議一：字體跟隨 OS（不硬寫 Microsoft JhengHei）
-    # Windows → Segoe UI Variable / Microsoft JhengHei UI
-    # macOS   → SF Pro / PingFang TC
-    # Linux   → Noto Sans / WenQuanYi
     font = app.font()
     font.setPointSize(10)
     font.setStyleStrategy(QFont.PreferAntialias)
     app.setFont(font)
 
-    # 建議四：深色模式自動偵測並套用 palette + QSS
     is_dark = UiStyles.apply_theme(app)
 
     window = MainWindow(is_dark=is_dark)
