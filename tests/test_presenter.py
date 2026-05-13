@@ -98,38 +98,46 @@ class TestLoadPdfs:
     def test_empty_list_is_noop(self, presenter):
         """load_pdfs([]) 不應觸發任何 workspace 操作。"""
         view, p = presenter
-        p._workspace.open_pdfs = MagicMock()
+        # 改為 mock open_files
+        p._workspace.open_files = MagicMock()
         p.load_pdfs([])
-        p._workspace.open_pdfs.assert_not_called()
+        p._workspace.open_files.assert_not_called()
         assert view.refresh_count == 0
 
-    def test_non_pdf_files_filtered(self, presenter):
-        """load_pdfs 應過濾掞 PDF 從檔案。"""
+    def test_unsupported_files_filtered(self, presenter):
+        """load_pdfs 應過濾掉不支援的檔案。"""
         view, p = presenter
-        p._workspace.open_pdfs = MagicMock()
-        p.load_pdfs(["image.png", "doc.txt"])
-        p._workspace.open_pdfs.assert_not_called()
+        p._workspace.open_files = MagicMock()
+        # 原本測試用的 image.png 現在是支援的格式了，改用不支援的 .txt 和 .mp4
+        p.load_pdfs(["doc.txt", "video.mp4"])
+        p._workspace.open_files.assert_not_called()
 
-    def test_valid_pdf_list_calls_open_pdfs(self, presenter):
-        """load_pdfs 傳入有效 PDF 清單時應呼叫 open_pdfs 並更新 view。"""
+    def test_valid_file_list_calls_open_files(self, presenter):
+        """load_pdfs 傳入有效清單時應呼叫 open_files 並更新 view。"""
         view, p = presenter
         p._workspace.pages = []
-        p._workspace.open_pdfs = MagicMock()
+        
+        # open_files 會回傳 (added_doc_ids, failed_paths)，我們必須 mock 這個回傳值
+        # 若 added_doc_ids 為空，presenter 會提早 return，就不會呼叫 refresh_all
+        p._workspace.open_files = MagicMock(return_value=(["doc1", "doc2"], []))
         p._model.refresh_all = MagicMock()
 
-        p.load_pdfs(["a.pdf", "b.pdf"])
+        p.load_pdfs(["a.pdf", "b.jpg"]) # 測試同時載入 PDF 與支援的圖片
 
-        p._workspace.open_pdfs.assert_called_once_with(["a.pdf", "b.pdf"])
+        p._workspace.open_files.assert_called_once_with(["a.pdf", "b.jpg"])
         p._model.refresh_all.assert_called_once()
         assert view.refresh_count == 1
 
-    def test_open_pdfs_exception_calls_show_error(self, presenter):
-        """open_pdfs 將廣异常時，view.show_error 應被呼叫。"""
+    def test_open_files_exception_calls_show_error(self, presenter):
+        """open_files 發生例外時，view.show_error 應被呼叫。"""
         view, p = presenter
-        p._workspace.open_pdfs = MagicMock(side_effect=RuntimeError("文件損壞"))
+        # 改為 mock open_files
+        p._workspace.open_files = MagicMock(side_effect=RuntimeError("文件損壞"))
         p.load_pdfs(["bad.pdf"])
+        
         assert len(view.errors) == 1
-        assert view.errors[0][0] == "開啟 PDF 失敗"
+        # 配合新版 presenter，標題改為 "開啟檔案失敗"
+        assert view.errors[0][0] == "開啟檔案失敗"
 
 
 class TestOnRotatePages:
