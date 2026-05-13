@@ -9,6 +9,9 @@ from __future__ import annotations
 
 import copy
 import logging
+import os
+import platform
+import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -39,6 +42,20 @@ _FILE_FILTER = (
 _SUPPORTED_SUFFIXES = frozenset(
     {".pdf", ".jpg", ".jpeg", ".png", ".tiff", ".tif", ".bmp", ".webp", ".gif"}
 )
+
+
+def _open_in_explorer(path: str | Path) -> None:
+    """跨平台開啟資料夾（Windows / macOS / Linux）。"""
+    folder = Path(path).parent if Path(path).is_file() else Path(path)
+    try:
+        if platform.system() == "Windows":
+            os.startfile(str(folder))  # type: ignore[attr-defined]
+        elif platform.system() == "Darwin":
+            subprocess.Popen(["open", str(folder)])
+        else:
+            subprocess.Popen(["xdg-open", str(folder)])
+    except Exception as exc:
+        logger.warning("無法開啟資料夾 %s：%s", folder, exc)
 
 
 class MainPresenter:
@@ -93,11 +110,20 @@ class MainPresenter:
             keep_metadata=s.keep_metadata,
             keep_page_labels=s.keep_page_labels,
             metadata_policy=s.metadata_policy,  # type: ignore[arg-type]
+            deflate_level=s.deflate_level,
         )
 
     def _default_save_dir(self) -> str:
         d = self._settings.default_output_dir
         return d if d and Path(d).is_dir() else ""
+
+    def _single_page_filename(self, seq: int, source_path: Path) -> str:
+        """依樣板產生單頁 PDF 檔名（不含 .pdf 副檔名）。"""
+        tmpl = self._settings.single_page_filename_template or "page_{n:03d}"
+        try:
+            return tmpl.format(n=seq, source=source_path.stem)
+        except (KeyError, ValueError):
+            return f"page_{seq:03d}"
 
     def _confirm_encrypted_sources(self, page_indices: list[int] | None = None) -> bool:
         enc = self._workspace.encrypted_used_sources(page_indices)
@@ -114,12 +140,14 @@ class MainPresenter:
         )
         return answer == QMessageBox.StandardButton.Yes
 
-    def _notify_success(self, msg: str) -> None:
-        """依設定決定是顯示 MessageBox 還是靜默 Toast。"""
+    def _notify_success(self, msg: str, output_path: str | None = None) -> None:
+        """依設定決定是顯示 MessageBox 還是靜默 Toast，並按需開啟資料夾。"""
         if self._settings.show_export_confirm:
             QMessageBox.information(None, "輸出成功", msg)
         else:
             self._view.show_toast(msg, "success")
+        if output_path and self._settings.open_folder_after_export:
+            _open_in_explorer(output_path)
 
     # ------------------------------------------------------------------
     # 公開 API
@@ -244,7 +272,8 @@ class MainPresenter:
         options = self._current_export_options()
         save_dir = self._default_save_dir()
         path, _ = QFileDialog.getSaveFileName(
-            None, "輸出 PDF", str(Path(save_dir) / "合併結果.pdf") if save_dir else "合併結果.pdf",
+            None, "輸出 PDF",
+            str(Path(save_dir) / "合併結果.pdf") if save_dir else "合併結果.pdf",
             "PDF 檔案 (*.pdf)"
         )
         if not path:
@@ -254,7 +283,7 @@ class MainPresenter:
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
             self._export_service.export(path, options)
-            self._notify_success(f"輸出成功至：\n{path}")
+            self._notify_success(f"輸出成功至：\n{path}", output_path=path)
         except Exception as e:
             self._view.show_error("輸出失敗", str(e))
         finally:
@@ -285,23 +314,22 @@ class MainPresenter:
             failed: list[str] = []
             try:
                 for i, row in enumerate(rows):
-                    filename = f"page_{i + 1:03d}.pdf"
-                    out_path = Path(save_dir) / filename
+                    page_ref = self._workspace.pages[row]
+                    filename = self._single_page_filename(i + 1, page_ref.source_path)
+                    out_path = Path(save_dir) / f"{filename}.pdf"
                     try:
                         self._export_service.export_selected([row], str(out_path), options)
                     except Exception as e:
-                        failed.append(f"{filename}: {e}")
+                        failed.append(f"{filename}.pdf: {e}")
             finally:
                 QApplication.restoreOverrideCursor()
 
             if failed:
-                self._view.show_error(
-                    "部分頁面輸出失敗",
-                    "\n".join(failed)
-                )
+                self._view.show_error("部分頁面輸出失敗", "\n".join(failed))
             else:
                 self._notify_success(
-                    f"已將 {len(rows)} 頁分別輸出至：\n{save_dir}"
+                    f"已將 {len(rows)} 頁分別輸出至：\n{save_dir}",
+                    output_path=save_dir,
                 )
         else:
             # ── 合併輸出模式（預設）──
@@ -318,7 +346,7 @@ class MainPresenter:
             QApplication.setOverrideCursor(Qt.WaitCursor)
             try:
                 self._export_service.export_selected(rows, path, options)
-                self._notify_success(f"已輸出 {len(rows)} 頁至：\n{path}")
+                self._notify_success(f"已輸出 {len(rows)} 頁至：\n{path}", output_path=path)
             except Exception as e:
                 self._view.show_error("輸出失敗", str(e))
             finally:
@@ -328,7 +356,6 @@ class MainPresenter:
         """開啟設定視窗；關閉後重新讀取設定（含縮圖縮放等即時生效項目）。"""
         dlg = SettingsDialog(None)
         dlg.exec()
-        # 重新載入設定（例如縮圖縮放倍率若改變，下次渲染時生效）
         self._settings = AppSettings()
 
     def undo(self) -> None:

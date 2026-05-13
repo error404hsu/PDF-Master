@@ -21,6 +21,8 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QGroupBox,
     QDoubleSpinBox,
+    QSpinBox,
+    QSlider,
     QFileDialog,
     QPushButton,
     QLineEdit,
@@ -94,7 +96,7 @@ class SettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("設定")
-        self.setMinimumWidth(460)
+        self.setMinimumWidth(500)
         self.setModal(True)
 
         self._settings = AppSettings()
@@ -141,20 +143,52 @@ class SettingsDialog(QDialog):
         form.addRow(self._chk_labels)
 
         # 輸出單頁模式
-        self._chk_single = QCheckBox(
-            "「輸出選取頁面」時，將每頁拆成獨立 PDF 檔案"
-        )
+        self._chk_single = QCheckBox("「輸出選取頁面」時，將每頁拆成獨立 PDF 檔案")
         self._chk_single.setChecked(self._settings.export_as_single_pages)
-        self._chk_single.setToolTip(
-            "勾選後，選取 N 頁時會輸出 N 個獨立 PDF，\n"
-            "檔名格式：<輸出名稱>_page_001.pdf"
-        )
         form.addRow(self._chk_single)
+
+        # 單頁檔名樣板（僅在單頁模式勾選時啟用）
+        self._edit_template = QLineEdit(self._settings.single_page_filename_template)
+        self._edit_template.setPlaceholderText("page_{n:03d}")
+        self._edit_template.setToolTip(
+            "支援佔位符：\n"
+            "  {n}      — 輸出序號（例：1, 2, 3）\n"
+            "  {n:03d}  — 補零序號（例：001, 002, 003）\n"
+            "  {source} — 來源檔名（不含副檔名）\n"
+            "範例：{source}_p{n:03d}  →  report_p001.pdf"
+        )
+        self._edit_template.setEnabled(self._settings.export_as_single_pages)
+        form.addRow("　　單頁檔名樣板：", self._edit_template)
+        self._chk_single.toggled.connect(self._edit_template.setEnabled)
+
+        # 輸出後自動開啟資料夾
+        self._chk_open_folder = QCheckBox("輸出完成後自動開啟輸出資料夾")
+        self._chk_open_folder.setChecked(self._settings.open_folder_after_export)
+        form.addRow(self._chk_open_folder)
 
         # 輸出後顯示完成提示
         self._chk_confirm = QCheckBox("輸出完成後顯示成功提示")
         self._chk_confirm.setChecked(self._settings.show_export_confirm)
         form.addRow(self._chk_confirm)
+
+        # PDF 壓縮等級
+        compress_row = QHBoxLayout()
+        self._slider_deflate = QSlider(Qt.Horizontal)
+        self._slider_deflate.setRange(0, 9)
+        self._slider_deflate.setValue(self._settings.deflate_level)
+        self._slider_deflate.setTickInterval(1)
+        self._slider_deflate.setTickPosition(QSlider.TicksBelow)
+        self._slider_deflate.setFixedWidth(160)
+
+        self._lbl_deflate = QLabel(self._deflate_hint(self._settings.deflate_level))
+        self._lbl_deflate.setStyleSheet(f"color: {UiStyles.TEXT_MUTED}; font-size: 9pt;")
+        self._slider_deflate.valueChanged.connect(
+            lambda v: self._lbl_deflate.setText(self._deflate_hint(v))
+        )
+        compress_row.addWidget(self._slider_deflate)
+        compress_row.addWidget(self._lbl_deflate)
+        compress_row.addStretch()
+        form.addRow("PDF 壓縮等級：", compress_row)
 
         self._chk_metadata.toggled.connect(
             lambda on: self._policy_combo.setEnabled(on)
@@ -162,6 +196,18 @@ class SettingsDialog(QDialog):
         self._policy_combo.setEnabled(self._settings.keep_metadata)
 
         return grp
+
+    @staticmethod
+    def _deflate_hint(level: int) -> str:
+        if level == 0:
+            return f"{level}  — 不壓縮（最快）"
+        if level <= 3:
+            return f"{level}  — 輕度壓縮"
+        if level <= 6:
+            return f"{level}  — 平衡（建議）"
+        if level <= 8:
+            return f"{level}  — 高壓縮"
+        return f"{level}  — 最大壓縮（最慢）"
 
     # ------------------------------------------------------------------
     # 設定方塊：介面
@@ -210,7 +256,10 @@ class SettingsDialog(QDialog):
         s.metadata_policy = self._policy_combo.currentData() or "first_pdf"
         s.keep_page_labels = self._chk_labels.isChecked()
         s.export_as_single_pages = self._chk_single.isChecked()
+        s.single_page_filename_template = self._edit_template.text()
+        s.open_folder_after_export = self._chk_open_folder.isChecked()
         s.show_export_confirm = self._chk_confirm.isChecked()
+        s.deflate_level = self._slider_deflate.value()
         s.default_output_dir = self._edit_dir.text().strip()
         s.thumbnail_zoom = self._spin_zoom.value()
         self.accept()

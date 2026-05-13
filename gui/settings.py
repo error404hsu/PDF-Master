@@ -58,6 +58,32 @@ class AppSettings:
     def export_as_single_pages(self, v: bool) -> None:
         self._s.setValue("export/single_pages", v)
 
+    @property
+    def single_page_filename_template(self) -> str:
+        """單頁輸出的檔名樣板，支援 {n}（序號）與 {source}（來源檔名）佔位符。
+
+        預設：page_{n:03d}
+        範例：{source}_p{n:03d}  →  report_p001.pdf
+        """
+        return self._s.value("export/single_page_template", "page_{n:03d}", type=str)  # type: ignore[return-value]
+
+    @single_page_filename_template.setter
+    def single_page_filename_template(self, v: str) -> None:
+        self._s.setValue("export/single_page_template", v.strip() or "page_{n:03d}")
+
+    # ------------------------------------------------------------------
+    # 輸出：壓縮等級
+    # ------------------------------------------------------------------
+
+    @property
+    def deflate_level(self) -> int:
+        """zlib 壓縮等級（0 = 不壓縮，最快；9 = 最大壓縮，最慢）。預設 6。"""
+        return int(self._s.value("export/deflate_level", 6))  # type: ignore[arg-type]
+
+    @deflate_level.setter
+    def deflate_level(self, v: int) -> None:
+        self._s.setValue("export/deflate_level", max(0, min(9, int(v))))
+
     # ------------------------------------------------------------------
     # 介面
     # ------------------------------------------------------------------
@@ -70,6 +96,15 @@ class AppSettings:
     @show_export_confirm.setter
     def show_export_confirm(self, v: bool) -> None:
         self._s.setValue("ui/show_export_confirm", v)
+
+    @property
+    def open_folder_after_export(self) -> bool:
+        """輸出完成後是否自動開啟輸出資料夾。"""
+        return self._s.value("ui/open_folder_after_export", False, type=bool)  # type: ignore[return-value]
+
+    @open_folder_after_export.setter
+    def open_folder_after_export(self, v: bool) -> None:
+        self._s.setValue("ui/open_folder_after_export", v)
 
     @property
     def default_output_dir(self) -> str:
@@ -95,4 +130,5 @@ class AppSettings:
             "keep_metadata": self.keep_metadata,
             "keep_page_labels": self.keep_page_labels,
             "metadata_policy": self.metadata_policy,
+            "deflate_level": self.deflate_level,
         }

@@ -45,9 +45,9 @@
   - commit: `feat(gui): QToolBar 重構 + SVG 圖示系統 + 圖片 drag-and-drop 支援`
 
 - `✅ 已完成` **現代化外觀三連升級（2026-05-08）**
-  - **建議一（圓角 + OS 字體）**：全面升級圓角至 8–10px；`main()` 改用 `app.font()` 跟隨 OS（Win11 Segoe UI Variable / macOS SF Pro）
-  - **建議二（卡片陰影）**：`PageCardDelegate.paint()` 以多層低透明矩形繪製投影；新增 `_draw_card_shadow()` 輔助函式；縮圖加圓角 `QPainterPath` 剪裁
-  - **建議四（深色模式）**：`UiStyles.is_dark_mode()` 靜態方法偵測 `QPalette.Window.lightness()`；`UiStyles.apply_theme()` 套用完整 Fusion Dark Palette；`MainWindow(is_dark=True/False)` 自動切換 Toolbar / Footer / ListView QSS
+  - **建議一（圓角 + OS 字體）**：全面升級圓角至 8–10px；`main()` 改用 `app.font()` 跟隨 OS
+  - **建議二（卡片陰影）**：`PageCardDelegate.paint()` 多層低透明矩形繪製投影
+  - **建議四（深色模式）**：`UiStyles.apply_theme()` 套用完整 Fusion Dark Palette
   - commit: `feat(gui): 現代化外觀 — 圓角升級 + 卡片陰影 + 深色模式自動偵測`
 
 ### 規劃中
@@ -99,13 +99,43 @@
 
 ---
 
-## 📦 匯出與文件結構
+## ⚙️ 設定系統
 
+- `✅ 已完成` **`gui/settings.py` — AppSettings（QSettings 持久化）**
+  - 輸出偏好：metadata、頁碼標籤、metadata 來源策略
+  - 單頁輸出模式（每頁獨立 PDF）
+  - 單頁檔名樣板（支援 `{n}` / `{source}` 佔位符）
+  - PDF 壓縮等級（deflate level 0–9，對應 `ExportOptions.deflate_level`）
+  - 輸出後自動開啟資料夾（跨平台：Windows / macOS / Linux）
+  - 輸出完成提示開關
+  - 預設輸出資料夾
+  - 縮圖縮放倍率
+
+- `✅ 已完成` **`gui/dialogs.py` — SettingsDialog（統一設定視窗）**
+  - 「輸出設定」方塊：含上述所有輸出選項
+  - 「介面設定」方塊：預設輸出資料夾、縮圖倍率
+  - 取代舊 `ExportPdfDialog`（不再每次輸出前彈窗詢問）
+  - 快捷鍵 `Ctrl+,` 開啟設定
+
+- `📌 規劃中` **復原步驟上限：可於設定調整（目前硬寫 20）**
+- `📌 規劃中` **語言 / 顯示語言切換（預留 i18n 入口）**
+- `📌 規劃中` **每列縮圖欄數（固定 2/3/4/自動）**
+
+---
+
+## 📦 輸出與文件結構
+
+- `✅ 已完成` **合併後 PDF 頁碼依畫面排列順序重新連續編號（2026-05-13）**
+  - 修正 `_apply_page_labels()`：改用 `style="D", startpage=0, firstpagenum=1`
+  - 不再沿用 `source_page_label`（來源原始頁碼）
+- `✅ 已完成` **PDF 壓縮等級可調（deflate_level 0–9）**
+  - `ExportOptions.deflate_level` 欄位（預設 6）
+  - `export_pages()` 的 `out_doc.save()` 使用 `deflate_level` 參數
 - `📌 規劃中` **保留書簽（TOC）**
 - `📌 規劃中` **保留附件（`keep_attachments`）**
 - `📌 規劃中` **保留互動表單（`keep_forms`）**
 - `📌 規劃中` **子資料夾遞迴掃描**
-- `📌 規劃中` **匯出前 Preflight 報告**
+- `📌 規劃中` **輸出前 Preflight 報告**
 
 ---
 
@@ -136,11 +166,11 @@
 
 ## ✅ 已實作（封存記錄）
 
-- 匯出選取頁、資料夾批次加入（單層）
-- 匯出選項對話框（metadata 來源策略、頁碼標籤）
-- `metadata_policy`：`first_pdf` / `last_pdf` / `empty` 於 PyMuPDF 匯出路徑
+- 輸出選取頁、資料夾批次加入（單層）
+- 輸出選項對話框（metadata 來源策略、頁碼標籤）→ 已遷移至 SettingsDialog
+- `metadata_policy`：`first_pdf` / `last_pdf` / `empty` 於 PyMuPDF 輸出路徑
 - 加密來源警示
-- 快捷鍵 Ctrl+A / Delete / Ctrl+Shift+E
+- 快捷鍵 Ctrl+A / Delete / Ctrl+Shift+E / Ctrl+,（設定）
 - `FakeBackend` + `test_workspace.py` 基礎測試套件
 - DIP 架構：`core/protocols.py` PdfBackend Protocol
 - **GUI 分層 Phase 1**：`gui/` 套件拆分（styles / workers / dialogs / models / views）
@@ -151,3 +181,6 @@
 - **圖片轉 PDF 完成（2026-05-08）**：ImageInspectionResult、inspect_image()、open_files()、_open_source_as_pdf()、load_files()、測試 ×5
 - **QToolBar 重構（2026-05-08）**：AppIcons、TOOLBAR QSS、_build_toolbar()、圖片 drag-and-drop
 - **現代化外觀（2026-05-08）**：圓角 10px、OS 字體、卡片陰影、深色模式自動偵測
+- **設定系統 + 輸出改版（2026-05-13）**：AppSettings、SettingsDialog、「匯出」→「輸出」、輸出單頁模式、不再每次彈窗
+- **輸出增強（2026-05-13）**：輸出後開資料夾、單頁檔名樣板、壓縮等級可調、ExportOptions.deflate_level
+- **頁碼修正（2026-05-13）**：合併後 PDF 依畫面排列順序重新連續編號

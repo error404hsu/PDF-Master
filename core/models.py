@@ -139,11 +139,14 @@ class ExportOptions:
     keep_forms: bool = True
     keep_bookmarks: bool = False
     metadata_policy: MetadataPolicy = "first_pdf"
+    deflate_level: int = 6  # zlib 壓縮等級，0 = 不壓縮，9 = 最大壓縮
 
     def __post_init__(self):
         allowed = {"first_pdf", "last_pdf", "empty"}
         if self.metadata_policy not in allowed:
             raise ValueError(f"metadata_policy must be one of {sorted(allowed)}")
+        if not (0 <= self.deflate_level <= 9):
+            raise ValueError("deflate_level must be between 0 and 9")
 
 
 @dataclass(slots=True, frozen=True)

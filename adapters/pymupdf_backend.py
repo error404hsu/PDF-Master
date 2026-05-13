@@ -146,7 +146,6 @@ class PyMuPdfBackend:
 
             info_by_path = {Path(info.path): info for info in source_info}
 
-            # 直接使用 ExportOptions dataclass 屬性，移除不安全的 getattr()
             if options.keep_metadata:
                 policy = options.metadata_policy
                 if policy == "empty":
@@ -164,7 +163,15 @@ class PyMuPdfBackend:
             if options.keep_page_labels:
                 self._apply_page_labels(out_doc, pages)
 
-            out_doc.save(output_path, garbage=3, deflate=True)
+            # 使用 ExportOptions.deflate_level 控制壓縮等級
+            # deflate=True 等同 level 6；此處改為直接傳入使用者設定值
+            deflate = options.deflate_level > 0
+            out_doc.save(
+                output_path,
+                garbage=3,
+                deflate=deflate,
+                deflate_level=options.deflate_level,
+            )
             return output_path
 
         finally:
