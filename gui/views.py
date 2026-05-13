@@ -201,6 +201,7 @@ class PageListView(QListView):
     context_rotate_right = Signal()
     context_delete = Signal()
     context_export_selected = Signal()
+    context_export_single = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -257,7 +258,8 @@ class PageListView(QListView):
         menu.addSeparator()
         act_delete = menu.addAction("🗑 刪除頁面")
         menu.addSeparator()
-        act_export = menu.addAction("💾 匯出選取頁面")
+        act_export = menu.addAction("💾 輸出選取頁面")
+        act_export_single = menu.addAction("📄 輸出單頁")
 
         chosen = menu.exec(self.viewport().mapToGlobal(pos))
         if chosen == act_rot_l:
@@ -270,6 +272,8 @@ class PageListView(QListView):
             self.context_delete.emit()
         elif chosen == act_export:
             self.context_export_selected.emit()
+        elif chosen == act_export_single:
+            self.context_export_single.emit()
 
     # ── 拖曳狀態 ───────────────────────────────────────────────────
 

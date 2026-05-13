@@ -142,12 +142,7 @@ class SettingsDialog(QDialog):
         self._chk_labels.setChecked(self._settings.keep_page_labels)
         form.addRow(self._chk_labels)
 
-        # 輸出單頁模式
-        self._chk_single = QCheckBox("「輸出選取頁面」時，將每頁拆成獨立 PDF 檔案")
-        self._chk_single.setChecked(self._settings.export_as_single_pages)
-        form.addRow(self._chk_single)
-
-        # 單頁檔名樣板（僅在單頁模式勾選時啟用）
+        # 單頁檔名樣板
         self._edit_template = QLineEdit(self._settings.single_page_filename_template)
         self._edit_template.setPlaceholderText("page_{n:03d}")
         self._edit_template.setToolTip(
@@ -157,9 +152,7 @@ class SettingsDialog(QDialog):
             "  {source} — 來源檔名（不含副檔名）\n"
             "範例：{source}_p{n:03d}  →  report_p001.pdf"
         )
-        self._edit_template.setEnabled(self._settings.export_as_single_pages)
-        form.addRow("　　單頁檔名樣板：", self._edit_template)
-        self._chk_single.toggled.connect(self._edit_template.setEnabled)
+        form.addRow("單頁檔名樣板：", self._edit_template)
 
         # 輸出後自動開啟資料夾
         self._chk_open_folder = QCheckBox("輸出完成後自動開啟輸出資料夾")
@@ -255,7 +248,6 @@ class SettingsDialog(QDialog):
         s.keep_metadata = self._chk_metadata.isChecked()
         s.metadata_policy = self._policy_combo.currentData() or "first_pdf"
         s.keep_page_labels = self._chk_labels.isChecked()
-        s.export_as_single_pages = self._chk_single.isChecked()
         s.single_page_filename_template = self._edit_template.text()
         s.open_folder_after_export = self._chk_open_folder.isChecked()
         s.show_export_confirm = self._chk_confirm.isChecked()

@@ -50,15 +50,6 @@ class AppSettings:
     # ------------------------------------------------------------------
 
     @property
-    def export_as_single_pages(self) -> bool:
-        """輸出選取頁面時，是否將每頁拆成獨立 PDF。"""
-        return self._s.value("export/single_pages", False, type=bool)  # type: ignore[return-value]
-
-    @export_as_single_pages.setter
-    def export_as_single_pages(self, v: bool) -> None:
-        self._s.setValue("export/single_pages", v)
-
-    @property
     def single_page_filename_template(self) -> str:
         """單頁輸出的檔名樣板，支援 {n}（序號）與 {source}（來源檔名）佔位符。
 

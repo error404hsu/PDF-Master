@@ -265,6 +265,7 @@ class MainWindow(QMainWindow):
         self.view.context_rotate_right.connect(lambda: self.presenter.on_rotate_pages(90))
         self.view.context_delete.connect(self.presenter.on_delete_pages)
         self.view.context_export_selected.connect(self.presenter.on_export_selected_pdf)
+        self.view.context_export_single.connect(self.presenter.on_export_single_pages)
 
         selection_model = self.view.selectionModel()
         if selection_model is not None:
