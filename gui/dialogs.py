@@ -7,29 +7,27 @@
 原 ExportPdfDialog 已移除：輸出選項改由 SettingsDialog 統一管理，
 不再於每次輸出時彈出詢問視窗。
 """
-from typing import Optional
 
+from PySide6.QtCore import Qt, Slot
+from PySide6.QtGui import QImage, QPixmap, QResizeEvent
 from PySide6.QtWidgets import (
-    QDialog,
-    QVBoxLayout,
-    QHBoxLayout,
-    QLabel,
-    QScrollArea,
     QCheckBox,
     QComboBox,
-    QFormLayout,
+    QDialog,
     QDialogButtonBox,
-    QGroupBox,
     QDoubleSpinBox,
-    QSpinBox,
-    QSlider,
     QFileDialog,
-    QPushButton,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
     QLineEdit,
+    QPushButton,
+    QScrollArea,
     QSizePolicy,
+    QSlider,
+    QVBoxLayout,
 )
-from PySide6.QtCore import Qt, Slot
-from PySide6.QtGui import QPixmap, QImage, QResizeEvent
 
 from gui.settings import AppSettings
 from gui.styles import UiStyles
@@ -58,7 +56,7 @@ class PreviewDialog(QDialog):
         layout.addWidget(self.scroll)
 
         self.setStyleSheet("background-color: #0f172a; color: white; border: none;")
-        self.full_pixmap: Optional[QPixmap] = None
+        self.full_pixmap: QPixmap | None = None
 
     @Slot(QImage, str)
     def update_image(self, qimage: QImage, label: str):

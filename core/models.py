@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
-import uuid
 
 MetadataPolicy = Literal["first_pdf", "last_pdf", "empty"]
 

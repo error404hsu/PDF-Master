@@ -30,22 +30,21 @@ from PySide6.QtWidgets import (
 )
 
 try:
-    from core.workspace import WorkspaceManager
     from adapters.pymupdf_backend import PyMuPdfBackend
-    from core.thumbnail_service import ThumbnailService
     from core.export_service import ExportService
+    from core.thumbnail_service import ThumbnailService
+    from core.workspace import WorkspaceManager
 except ImportError as e:
     print(f"匯入核心邏輯失敗，請確保 gui_main.py 放在專案根目錄。錯誤: {e}")
     sys.exit(1)
 
+from gui.empty_state import EmptyStateOverlay
 from gui.icons import AppIcons
-from gui.interfaces import IMainView
 from gui.models import PdfPageModel, SnapshotHistory
 from gui.presenter import MainPresenter
 from gui.styles import UiStyles
-from gui.views import PageCardDelegate, PageListView
 from gui.toast import Toast
-from gui.empty_state import EmptyStateOverlay
+from gui.views import PageCardDelegate, PageListView
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s | %(name)s | %(message)s")
 logger = logging.getLogger("gui_main")

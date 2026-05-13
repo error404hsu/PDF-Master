@@ -6,14 +6,12 @@ MockView 實作 IMainView Protocol，用 unittest.mock 模擬業務服務。
 from __future__ import annotations
 
 import copy
-from typing import List
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from gui.interfaces import IMainView
 from gui.models import SnapshotHistory
-
 
 # ---------------------------------------------------------------------------
 # MockView — 实作 IMainView，不依賴 QWidget

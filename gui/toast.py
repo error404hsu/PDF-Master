@@ -5,7 +5,7 @@
 """
 from __future__ import annotations
 
-from PySide6.QtCore import QPropertyAnimation, QEasingCurve, QTimer, QPoint, Qt
+from PySide6.QtCore import QEasingCurve, QPropertyAnimation, Qt, QTimer
 from PySide6.QtWidgets import QLabel, QWidget
 
 from gui.styles import UiStyles

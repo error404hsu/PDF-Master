@@ -1,16 +1,14 @@
 # 資料模型模組 — SnapshotHistory（復原/重做）與 PdfPageModel（Qt List Model）
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional
 
 from PySide6.QtCore import (
-    Qt,
-    QSize,
     QAbstractListModel,
+    QMimeData,
     QModelIndex,
+    Qt,
     QThreadPool,
     Slot,
-    QMimeData,
 )
 from PySide6.QtGui import QPixmap
 
@@ -35,8 +33,8 @@ class ThumbState:
 class SnapshotHistory:
     def __init__(self, max_entries: int = 20):
         self.max_entries = max_entries
-        self.undo_stack: List[list] = []
-        self.redo_stack: List[list] = []
+        self.undo_stack: list[list] = []
+        self.redo_stack: list[list] = []
 
     def clear(self):
         self.undo_stack.clear()
@@ -54,14 +52,14 @@ class SnapshotHistory:
     def can_redo(self) -> bool:
         return bool(self.redo_stack)
 
-    def undo(self, current_pages: list) -> Optional[list]:
+    def undo(self, current_pages: list) -> list | None:
         if not self.undo_stack:
             return None
         import copy
         self.redo_stack.append(copy.deepcopy(current_pages))
         return self.undo_stack.pop()
 
-    def redo(self, current_pages: list) -> Optional[list]:
+    def redo(self, current_pages: list) -> list | None:
         if not self.redo_stack:
             return None
         import copy
@@ -75,9 +73,9 @@ class PdfPageModel(QAbstractListModel):
         self.workspace = workspace
         self.thumb_service = thumb_service
         self.thread_pool = QThreadPool.globalInstance()
-        self._thumb_cache: Dict[int, QPixmap] = {}
+        self._thumb_cache: dict[int, QPixmap] = {}
         self._rendering_page_ids: set[str] = set()
-        self._failed_page_ids: Dict[str, str] = {}
+        self._failed_page_ids: dict[str, str] = {}
 
     def rowCount(self, parent=QModelIndex()):
         return len(self.workspace.pages)
@@ -206,7 +204,7 @@ class PdfPageModel(QAbstractListModel):
                 [Qt.DecorationRole, THUMB_STATE_ROLE, THUMB_ERROR_ROLE],
             )
 
-    def clear_thumbnail_state(self, rows: Optional[List[int]] = None):
+    def clear_thumbnail_state(self, rows: list[int] | None = None):
         if rows is None:
             self._thumb_cache.clear()
             self._rendering_page_ids.clear()
@@ -220,7 +218,7 @@ class PdfPageModel(QAbstractListModel):
                 self._failed_page_ids.pop(pid, None)
             self._thumb_cache.pop(row, None)
 
-    def invalidate_rows(self, rows: List[int]):
+    def invalidate_rows(self, rows: list[int]):
         if not rows:
             return
 

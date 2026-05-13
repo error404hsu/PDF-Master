@@ -5,11 +5,10 @@
 """
 from __future__ import annotations
 
-import base64
-from functools import lru_cache
+from functools import cache
 
-from PySide6.QtCore import QByteArray, QSize, Qt
-from PySide6.QtGui import QIcon, QImage, QPainter, QPixmap
+from PySide6.QtCore import QByteArray, Qt
+from PySide6.QtGui import QIcon, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QApplication, QStyle
 
@@ -105,7 +104,7 @@ class AppIcons:
     """集中式圖示工廠，優先使用平台 StandardPixmap，fallback 至內嵌 SVG。"""
 
     @staticmethod
-    @lru_cache(maxsize=None)
+    @cache
     def get(name: str) -> QIcon:
         """回傳對應 key 的 QIcon，優先 SP_*，fallback SVG。"""
         entry = _ICON_MAP.get(name)

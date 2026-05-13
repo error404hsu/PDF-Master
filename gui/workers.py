@@ -2,10 +2,8 @@
 import logging
 from pathlib import Path
 
-from PySide6.QtCore import QRunnable, QObject, Signal, Slot
+from PySide6.QtCore import QObject, QRunnable, Signal, Slot
 from PySide6.QtGui import QImage
-
-from core.thumbnail_service import ThumbnailService
 
 logger = logging.getLogger("gui.workers")
 

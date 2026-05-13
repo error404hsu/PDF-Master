@@ -2,35 +2,34 @@
 import ast
 import logging
 
-from PySide6.QtWidgets import (
-    QListView,
-    QStyledItemDelegate,
-    QStyle,
-    QAbstractItemView,
-    QMessageBox,
-    QMenu,
-)
 from PySide6.QtCore import (
-    Qt,
-    QSize,
     QPoint,
     QRect,
+    QSize,
+    Qt,
     Signal,
 )
 from PySide6.QtGui import (
-    QPainter,
-    QColor,
-    QPen,
-    QPolygon,
     QBrush,
+    QColor,
+    QDragEnterEvent,
     QDragMoveEvent,
     QDropEvent,
-    QDragEnterEvent,
-    QLinearGradient,
+    QPainter,
+    QPen,
+    QPolygon,
+)
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QListView,
+    QMenu,
+    QMessageBox,
+    QStyle,
+    QStyledItemDelegate,
 )
 
-from gui.models import PAGE_ROLE, THUMB_STATE_ROLE, THUMB_ERROR_ROLE, ThumbState
-from gui.styles import UiStyles, SOURCE_COLORS
+from gui.models import PAGE_ROLE, THUMB_ERROR_ROLE, THUMB_STATE_ROLE, ThumbState
+from gui.styles import SOURCE_COLORS, UiStyles
 
 logger = logging.getLogger("gui.views")
 
@@ -63,7 +62,7 @@ def _draw_card_shadow(painter: QPainter, rect: QRect, radius: int) -> None:
     """以多層低透明度圓角矩形模擬卡片投影（不依賴 QGraphicsDropShadowEffect）。"""
     r, g, b, base_alpha = UiStyles.CARD_SHADOW_COLOR
     dx, dy = UiStyles.CARD_SHADOW_OFFSET
-    blur = UiStyles.CARD_SHADOW_RADIUS
+   #blur = UiStyles.CARD_SHADOW_RADIUS
     painter.save()
     painter.setRenderHint(QPainter.Antialiasing)
     painter.setPen(Qt.NoPen)

@@ -15,9 +15,8 @@ import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QModelIndex, QThreadPool
-from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QMessageBox
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QModelIndex, Qt, QThreadPool
+from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox
 
 from core.models import ExportOptions
 from gui.dialogs import PreviewDialog, SettingsDialog
@@ -27,9 +26,9 @@ from gui.settings import AppSettings
 from gui.workers import HighResWorker
 
 if TYPE_CHECKING:
-    from core.workspace import WorkspaceManager
     from adapters.pymupdf_backend import PyMuPdfBackend
     from core.export_service import ExportService
+    from core.workspace import WorkspaceManager
     from gui.models import PdfPageModel
 
 logger = logging.getLogger(__name__)
@@ -64,10 +63,10 @@ class MainPresenter:
     def __init__(
         self,
         view: IMainView,
-        workspace: "WorkspaceManager",
-        backend: "PyMuPdfBackend",
-        export_service: "ExportService",
-        model: "PdfPageModel",
+        workspace: WorkspaceManager,
+        backend: PyMuPdfBackend,
+        export_service: ExportService,
+        model: PdfPageModel,
         history: SnapshotHistory,
     ) -> None:
         self._view = view

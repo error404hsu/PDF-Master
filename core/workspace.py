@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import Iterable, Sequence
 
 from .exceptions import InvalidMoveError, InvalidRotationError, WorkspaceError
 from .models import (

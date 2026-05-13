@@ -319,8 +319,8 @@ QToolButton:disabled { background-color: #93c5fd; }
     @staticmethod
     def is_dark_mode() -> bool:
         """偵測系統是否處於深色模式（跨平台，不依賴 OS API）。"""
-        from PySide6.QtWidgets import QApplication
         from PySide6.QtGui import QPalette
+        from PySide6.QtWidgets import QApplication
         app = QApplication.instance()
         if app is None:
             return False
@@ -331,7 +331,7 @@ QToolButton:disabled { background-color: #93c5fd; }
     @staticmethod
     def apply_theme(app) -> bool:  # type: ignore[type-arg]
         """依系統深淺色自動套用全局 QSS，回傳 is_dark。"""
-        from PySide6.QtGui import QPalette, QColor
+        from PySide6.QtGui import QColor, QPalette
         is_dark = UiStyles.is_dark_mode()
         if is_dark:
             # 強制 Fusion dark palette
