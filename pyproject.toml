@@ -45,3 +45,7 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--cov=core --cov=adapters --cov-report=term-missing --cov-fail-under=60"
+
+[tool.setuptools]
+packages = ["core", "adapters", "gui"]
+py-modules = ["main", "gui_main"]
