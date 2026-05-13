@@ -66,6 +66,24 @@ _SVG_ROTATE_RIGHT = """
 </svg>
 """
 
+_SVG_EXPORT_SINGLE = """
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
+  <rect x="2" y="2" width="9" height="12" rx="1.5" fill="#475569" opacity="0.18"/>
+  <rect x="5" y="1.5" width="9" height="12" rx="1.5" fill="#475569"/>
+  <path d="M9.5 5.5v4" stroke="white" stroke-width="1.4" stroke-linecap="round"/>
+  <path d="M7.8 7.9 9.5 9.5l1.7-1.6" stroke="white" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M7.3 11.3h4.4" stroke="white" stroke-width="1.2" stroke-linecap="round"/>
+</svg>
+"""
+
+_SVG_SETTINGS = """
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
+  <path d="M6.8 1.7h2.4l.35 1.55c.25.09.49.19.72.31l1.42-.7 1.7 1.7-.7 1.42c.12.23.22.47.31.72l1.55.35v2.4l-1.55.35c-.09.25-.19.49-.31.72l.7 1.42-1.7 1.7-1.42-.7c-.23.12-.47.22-.72.31l-.35 1.55H6.8l-.35-1.55a5.86 5.86 0 0 1-.72-.31l-1.42.7-1.7-1.7.7-1.42a5.86 5.86 0 0 1-.31-.72L1.45 9.5V7.1l1.55-.35c.09-.25.19-.49.31-.72l-.7-1.42 1.7-1.7 1.42.7c.23-.12.47-.22.72-.31L6.8 1.7Z"
+        fill="#475569"/>
+  <circle cx="8" cy="8.3" r="2.2" fill="white"/>
+</svg>
+"""
+
 # key → (StandardPixmap_attr_name, fallback_svg)
 _ICON_MAP: dict[str, tuple[str, str]] = {
     "open_file":       ("SP_FileDialogStart",       _SVG_FOLDER_OPEN),
@@ -77,7 +95,9 @@ _ICON_MAP: dict[str, tuple[str, str]] = {
     "rotate_right":    ("",                          _SVG_ROTATE_RIGHT),
     "delete":          ("SP_TrashIcon",              _SVG_TRASH),
     "export_selected": ("SP_FileDialogDetailedView", ""),
+    "export_single":   ("",                          _SVG_EXPORT_SINGLE),
     "export":          ("SP_DialogSaveButton",       ""),
+    "settings":        ("SP_FileDialogContentsView", _SVG_SETTINGS),
 }
 
 
@@ -94,7 +114,6 @@ class AppIcons:
 
         sp_attr, fallback_svg = entry
 
-        # 嘗試 Qt 內建 StandardPixmap
         if sp_attr:
             app = QApplication.instance()
             if app is not None:
@@ -105,7 +124,6 @@ class AppIcons:
                     if not icon.isNull():
                         return icon
 
-        # fallback：內嵌 SVG
         if fallback_svg:
             return AppIcons._from_svg(fallback_svg)
 
@@ -116,7 +134,7 @@ class AppIcons:
         """將 SVG 字串轉為 QIcon（透過 QSvgRenderer + QPainter）。"""
         svg_bytes = QByteArray(svg_str.encode("utf-8"))
         renderer = QSvgRenderer(svg_bytes)
-        size = 32  # 渲染為 32px，讓 Qt 自動縮放
+        size = 32
         pixmap = QPixmap(size, size)
         pixmap.fill(Qt.transparent)
         painter = QPainter(pixmap)

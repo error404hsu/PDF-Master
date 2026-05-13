@@ -4,17 +4,6 @@ Phase 2 MVP 重構：
   - MainWindow 實作 IMainView Protocol
   - 所有按鈕 Signal 連接至 self.presenter.*
   - 本檔不含任何業務邏輯（無 workspace 操作）
-
-UI/UX 改進（feat commit）：
-  - Footer 分離狀態列（左）與快捷鍵提示（右）
-  - Empty State 引導畫面（無頁面時顯示）
-  - Toast 非阻塞通知（取代非嚴重 QMessageBox）
-  - QToolBar Header，搭配 SVG 圖示系統
-  - PageCardDelegate 來源色帶（多檔區分）
-  - PageListView 右鍵情境選單
-  - 圖片檔案 drag-and-drop 支援
-  - 現代化外觀：圓角升級、卡片陰影、深色模式自動偵測
-  - 字體跟隨 OS（不硬寫 Microsoft JhengHei）
 """
 from __future__ import annotations
 
@@ -68,8 +57,6 @@ _SUPPORTED_SUFFIXES = frozenset({
 
 
 class MainWindow(QMainWindow):
-    """MVP View 層—僅負責純 UI 建構與事件轉中。"""
-
     def __init__(self, is_dark: bool = False) -> None:
         super().__init__()
         self._is_dark = is_dark
@@ -102,10 +89,6 @@ class MainWindow(QMainWindow):
         self._update_history_buttons()
         self.update_status()
 
-    # ------------------------------------------------------------------
-    # IMainView 實作
-    # ------------------------------------------------------------------
-
     def show_error(self, title: str, msg: str) -> None:
         from PySide6.QtWidgets import QMessageBox
         QMessageBox.critical(self, title, msg)
@@ -125,13 +108,7 @@ class MainWindow(QMainWindow):
         selection_model = self.view.selectionModel()
         if selection_model is None:
             return []
-        return sorted(
-            {idx.row() for idx in selection_model.selectedIndexes() if idx.isValid()}
-        )
-
-    # ------------------------------------------------------------------
-    # 進度條控制
-    # ------------------------------------------------------------------
+        return sorted({idx.row() for idx in selection_model.selectedIndexes() if idx.isValid()})
 
     def show_progress(self, value: int = 0, maximum: int = 0) -> None:
         self.progress_bar.setMaximum(maximum)
@@ -140,10 +117,6 @@ class MainWindow(QMainWindow):
 
     def hide_progress(self) -> None:
         self.progress_bar.setVisible(False)
-
-    # ------------------------------------------------------------------
-    # 純 UI 建構
-    # ------------------------------------------------------------------
 
     def _build_ui(self) -> None:
         central = QWidget()
@@ -172,9 +145,7 @@ class MainWindow(QMainWindow):
         self.view = PageListView(list_container)
         self.view.setModel(self.model)
         self.view.setItemDelegate(PageCardDelegate())
-        self.view.setStyleSheet(
-            UiStyles.LIST_VIEW_DARK if self._is_dark else UiStyles.LIST_VIEW
-        )
+        self.view.setStyleSheet(UiStyles.LIST_VIEW_DARK if self._is_dark else UiStyles.LIST_VIEW)
         list_layout.addWidget(self.view)
 
         self.empty_overlay = EmptyStateOverlay(list_container)
@@ -190,24 +161,16 @@ class MainWindow(QMainWindow):
                 f" border-top: 1px solid {UiStyles.DARK_BORDER};"
             )
         else:
-            footer_widget.setStyleSheet(
-                "background-color: white; border-top: 1px solid #e2e8f0;"
-            )
+            footer_widget.setStyleSheet("background-color: white; border-top: 1px solid #e2e8f0;")
         footer_layout = QHBoxLayout(footer_widget)
         footer_layout.setContentsMargins(16, 0, 16, 0)
         footer_layout.setSpacing(0)
 
         self.footer_status = QLabel(" 總計 0 頁")
-        self.footer_status.setStyleSheet(
-            UiStyles.FOOTER_DARK if self._is_dark else UiStyles.FOOTER
-        )
+        self.footer_status.setStyleSheet(UiStyles.FOOTER_DARK if self._is_dark else UiStyles.FOOTER)
 
-        self.footer_hint = QLabel(
-            "Ctrl+A 全選 ｜ Del 刪除 ｜ Ctrl+Z 復原 ｜ 雙擊預覽 ｜ 拖曳排序"
-        )
-        self.footer_hint.setStyleSheet(
-            UiStyles.FOOTER_HINT_DARK if self._is_dark else UiStyles.FOOTER_HINT
-        )
+        self.footer_hint = QLabel("Ctrl+A 全選 ｜ Del 刪除 ｜ Ctrl+Z 復原 ｜ 雙擊預覽 ｜ 拖曳排序")
+        self.footer_hint.setStyleSheet(UiStyles.FOOTER_HINT_DARK if self._is_dark else UiStyles.FOOTER_HINT)
 
         footer_layout.addWidget(self.footer_status)
         footer_layout.addStretch()
@@ -220,25 +183,20 @@ class MainWindow(QMainWindow):
         toolbar.setMovable(False)
         toolbar.setFloatable(False)
         toolbar.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
-        toolbar.setStyleSheet(
-            UiStyles.TOOLBAR_DARK if self._is_dark else UiStyles.TOOLBAR
-        )
+        toolbar.setStyleSheet(UiStyles.TOOLBAR_DARK if self._is_dark else UiStyles.TOOLBAR)
 
-        # --- 開啟檔案 / 資料夾 ---
         self.act_open_file = QAction(AppIcons.get("open_file"), "開啟檔案", self)
         self.act_open_folder = QAction(AppIcons.get("open_folder"), "開啟資料夾", self)
         toolbar.addAction(self.act_open_file)
         toolbar.addAction(self.act_open_folder)
         toolbar.addSeparator()
 
-        # --- 復原 / 重做 ---
         self.act_undo = QAction(AppIcons.get("undo"), "復原", self)
         self.act_redo = QAction(AppIcons.get("redo"), "重做", self)
         toolbar.addAction(self.act_undo)
         toolbar.addAction(self.act_redo)
         toolbar.addSeparator()
 
-        # --- 旋轉 / 刪除 ---
         self.act_rot_l = QAction(AppIcons.get("rotate_left"), "左轉 90°", self)
         self.act_rot_180 = QAction(AppIcons.get("rotate_180"), "轉 180°", self)
         self.act_rot_r = QAction(AppIcons.get("rotate_right"), "右轉 90°", self)
@@ -248,28 +206,25 @@ class MainWindow(QMainWindow):
         toolbar.addAction(self.act_rot_r)
         toolbar.addAction(self.act_delete)
 
-        # --- 右側 spacer ---
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         toolbar.addWidget(spacer)
 
-        # --- 輸出按鈕區（原「匯出」改為「輸出」）---
         self.act_export_sel = QAction(AppIcons.get("export_selected"), "輸出選取", self)
+        self.act_export_single = QAction(AppIcons.get("export_single"), "輸出單頁", self)
         self.act_export = QAction(AppIcons.get("export"), "輸出結果", self)
         toolbar.addAction(self.act_export_sel)
+        toolbar.addAction(self.act_export_single)
         toolbar.addAction(self.act_export)
         toolbar.addSeparator()
 
-        # --- 設定按鈕 ---
         self.act_settings = QAction(AppIcons.get("settings"), "設定", self)
         toolbar.addAction(self.act_settings)
 
         self.addToolBar(Qt.TopToolBarArea, toolbar)
         self._toolbar = toolbar
 
-    def _make_button(
-        self, text: str, width: int, height: int, variant: str = "base"
-    ) -> QPushButton:
+    def _make_button(self, text: str, width: int, height: int, variant: str = "base") -> QPushButton:
         btn = QPushButton(text)
         btn.setFixedSize(width, height)
         if variant == "danger":
@@ -287,10 +242,6 @@ class MainWindow(QMainWindow):
         line.setStyleSheet(f"color: {UiStyles.PANEL_BORDER};")
         return line
 
-    # ------------------------------------------------------------------
-    # Signal 連接與快捷鍵
-    # ------------------------------------------------------------------
-
     def _connect_signals(self) -> None:
         self.act_open_file.triggered.connect(self.presenter.on_add_pdf)
         self.act_open_folder.triggered.connect(self.presenter.on_add_folder)
@@ -301,6 +252,7 @@ class MainWindow(QMainWindow):
         self.act_rot_r.triggered.connect(lambda: self.presenter.on_rotate_pages(90))
         self.act_delete.triggered.connect(self.presenter.on_delete_pages)
         self.act_export_sel.triggered.connect(self.presenter.on_export_selected_pdf)
+        self.act_export_single.triggered.connect(self.presenter.on_export_single_pages)
         self.act_export.triggered.connect(self.presenter.on_export_pdf)
         self.act_settings.triggered.connect(self.presenter.on_open_settings)
 
@@ -321,30 +273,10 @@ class MainWindow(QMainWindow):
     def _setup_shortcuts(self) -> None:
         QShortcut(QKeySequence("Ctrl+Z"), self, activated=self.presenter.undo)
         QShortcut(QKeySequence("Ctrl+Y"), self, activated=self.presenter.redo)
-        QShortcut(
-            QKeySequence(QKeySequence.StandardKey.SelectAll),
-            self.view,
-            activated=self.view.selectAll,
-        )
-        QShortcut(
-            QKeySequence(QKeySequence.StandardKey.Delete),
-            self.view,
-            activated=self.presenter.on_delete_pages,
-        )
-        QShortcut(
-            QKeySequence("Ctrl+Shift+E"),
-            self,
-            activated=self.presenter.on_export_selected_pdf,
-        )
-        QShortcut(
-            QKeySequence("Ctrl+,"),
-            self,
-            activated=self.presenter.on_open_settings,
-        )
-
-    # ------------------------------------------------------------------
-    # 狀態與按鈕更新
-    # ------------------------------------------------------------------
+        QShortcut(QKeySequence(QKeySequence.StandardKey.SelectAll), self.view, activated=self.view.selectAll)
+        QShortcut(QKeySequence(QKeySequence.StandardKey.Delete), self.view, activated=self.presenter.on_delete_pages)
+        QShortcut(QKeySequence("Ctrl+Shift+E"), self, activated=self.presenter.on_export_selected_pdf)
+        QShortcut(QKeySequence("Ctrl+,"), self, activated=self.presenter.on_open_settings)
 
     def update_status(self, *args: object) -> None:
         total = self.model.rowCount()
@@ -369,11 +301,8 @@ class MainWindow(QMainWindow):
         self.act_rot_r.setEnabled(has_selection)
         self.act_delete.setEnabled(has_selection)
         self.act_export_sel.setEnabled(has_selection)
+        self.act_export_single.setEnabled(has_selection)
         self.act_export.setEnabled(has_pages)
-
-    # ------------------------------------------------------------------
-    # Qt 事件 override
-    # ------------------------------------------------------------------
 
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:
         if event.mimeData().hasUrls():
@@ -397,7 +326,7 @@ class MainWindow(QMainWindow):
             return
         super().dropEvent(event)
 
-    def closeEvent(self, event) -> None:  # type: ignore[override]
+    def closeEvent(self, event) -> None:
         try:
             if self.thumb_path.exists():
                 shutil.rmtree(self.thumb_path, ignore_errors=True)
@@ -406,15 +335,9 @@ class MainWindow(QMainWindow):
         event.accept()
 
 
-# ---------------------------------------------------------------------------
-# 入口點
-# ---------------------------------------------------------------------------
-
 def main() -> None:
     os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
-    QApplication.setHighDpiScaleFactorRoundingPolicy(
-        Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
-    )
+    QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
 

@@ -79,18 +79,14 @@ class MainPresenter:
         self._thread_pool = QThreadPool.globalInstance()
         self._settings = AppSettings()
 
-    # ------------------------------------------------------------------
-    # 內部輔助
-    # ------------------------------------------------------------------
-
-    def _capture_before_change(self) -> list:  # type: ignore[type-arg]
+    def _capture_before_change(self) -> list:
         return copy.deepcopy(self._workspace.pages)
 
-    def _commit_history(self, before_snapshot: list) -> None:  # type: ignore[type-arg]
+    def _commit_history(self, before_snapshot: list) -> None:
         self._history.push_snapshot(before_snapshot)
         self._view.set_status(self._status_text())
 
-    def _restore_pages(self, restored_pages: list | None) -> None:  # type: ignore[type-arg]
+    def _restore_pages(self, restored_pages: list | None) -> None:
         if restored_pages is None:
             return
         self._workspace.pages = restored_pages
@@ -104,12 +100,11 @@ class MainPresenter:
         return f" 總計 {total} 頁 | 已選取 {selected} 頁"
 
     def _current_export_options(self) -> ExportOptions:
-        """從 AppSettings 組出 ExportOptions（不彈對話框）。"""
         s = self._settings
         return ExportOptions(
             keep_metadata=s.keep_metadata,
             keep_page_labels=s.keep_page_labels,
-            metadata_policy=s.metadata_policy,  # type: ignore[arg-type]
+            metadata_policy=s.metadata_policy,
             deflate_level=s.deflate_level,
         )
 
@@ -118,7 +113,6 @@ class MainPresenter:
         return d if d and Path(d).is_dir() else ""
 
     def _single_page_filename(self, seq: int, source_path: Path) -> str:
-        """依樣板產生單頁 PDF 檔名（不含 .pdf 副檔名）。"""
         tmpl = self._settings.single_page_filename_template or "page_{n:03d}"
         try:
             return tmpl.format(n=seq, source=source_path.stem)
@@ -141,7 +135,6 @@ class MainPresenter:
         return answer == QMessageBox.StandardButton.Yes
 
     def _notify_success(self, msg: str, output_path: str | None = None) -> None:
-        """依設定決定是顯示 MessageBox 還是靜默 Toast，並按需開啟資料夾。"""
         if self._settings.show_export_confirm:
             QMessageBox.information(None, "輸出成功", msg)
         else:
@@ -149,9 +142,45 @@ class MainPresenter:
         if output_path and self._settings.open_folder_after_export:
             _open_in_explorer(output_path)
 
-    # ------------------------------------------------------------------
-    # 公開 API
-    # ------------------------------------------------------------------
+    def _export_rows_as_single_pages(self, rows: list[int]) -> None:
+        if not rows:
+            QMessageBox.information(
+                None,
+                "輸出單頁",
+                "請先在縮圖區選取至少一頁，再使用「輸出單頁」。",
+            )
+            return
+
+        options = self._current_export_options()
+        save_dir = QFileDialog.getExistingDirectory(
+            None, "選擇單頁 PDF 輸出資料夾", self._default_save_dir()
+        )
+        if not save_dir:
+            return
+        if not self._confirm_encrypted_sources(rows):
+            return
+
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        failed: list[str] = []
+        try:
+            for i, row in enumerate(rows):
+                page_ref = self._workspace.pages[row]
+                filename = self._single_page_filename(i + 1, page_ref.source_path)
+                out_path = Path(save_dir) / f"{filename}.pdf"
+                try:
+                    self._export_service.export_selected([row], str(out_path), options)
+                except Exception as e:
+                    failed.append(f"{filename}.pdf: {e}")
+        finally:
+            QApplication.restoreOverrideCursor()
+
+        if failed:
+            self._view.show_error("部分頁面輸出失敗", "\n".join(failed))
+        else:
+            self._notify_success(
+                f"已將 {len(rows)} 頁分別輸出至：\n{save_dir}",
+                output_path=save_dir,
+            )
 
     def load_files(self, files: list[str]) -> None:
         supported = [f for f in files if Path(f).suffix.lower() in _SUPPORTED_SUFFIXES]
@@ -180,7 +209,6 @@ class MainPresenter:
         self._view.refresh_view()
 
     def load_pdfs(self, files: list[str]) -> None:
-        """向後相容入口，委派至 load_files()。"""
         self.load_files(files)
 
     def on_add_pdf(self) -> None:
@@ -266,7 +294,6 @@ class MainPresenter:
         self._view.refresh_view()
 
     def on_export_pdf(self) -> None:
-        """輸出全部頁面為合併 PDF（不再彈出選項視窗，直接讀設定）。"""
         if not self._workspace.pages:
             return
         options = self._current_export_options()
@@ -290,7 +317,6 @@ class MainPresenter:
             QApplication.restoreOverrideCursor()
 
     def on_export_selected_pdf(self) -> None:
-        """輸出選取頁面；依設定決定合併為單一 PDF 或拆成單頁輸出。"""
         rows = self._view.get_selected_rows()
         if not rows:
             QMessageBox.information(
@@ -300,60 +326,29 @@ class MainPresenter:
             return
 
         options = self._current_export_options()
+        save_dir = self._default_save_dir()
+        path, _ = QFileDialog.getSaveFileName(
+            None, "輸出選取頁面",
+            str(Path(save_dir) / "選取頁面.pdf") if save_dir else "選取頁面.pdf",
+            "PDF 檔案 (*.pdf)"
+        )
+        if not path:
+            return
+        if not self._confirm_encrypted_sources(rows):
+            return
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            self._export_service.export_selected(rows, path, options)
+            self._notify_success(f"已輸出 {len(rows)} 頁至：\n{path}", output_path=path)
+        except Exception as e:
+            self._view.show_error("輸出失敗", str(e))
+        finally:
+            QApplication.restoreOverrideCursor()
 
-        if self._settings.export_as_single_pages:
-            # ── 單頁輸出模式：每頁存為獨立 PDF ──
-            save_dir = QFileDialog.getExistingDirectory(
-                None, "選擇單頁 PDF 輸出資料夾", self._default_save_dir()
-            )
-            if not save_dir:
-                return
-            if not self._confirm_encrypted_sources(rows):
-                return
-            QApplication.setOverrideCursor(Qt.WaitCursor)
-            failed: list[str] = []
-            try:
-                for i, row in enumerate(rows):
-                    page_ref = self._workspace.pages[row]
-                    filename = self._single_page_filename(i + 1, page_ref.source_path)
-                    out_path = Path(save_dir) / f"{filename}.pdf"
-                    try:
-                        self._export_service.export_selected([row], str(out_path), options)
-                    except Exception as e:
-                        failed.append(f"{filename}.pdf: {e}")
-            finally:
-                QApplication.restoreOverrideCursor()
-
-            if failed:
-                self._view.show_error("部分頁面輸出失敗", "\n".join(failed))
-            else:
-                self._notify_success(
-                    f"已將 {len(rows)} 頁分別輸出至：\n{save_dir}",
-                    output_path=save_dir,
-                )
-        else:
-            # ── 合併輸出模式（預設）──
-            save_dir = self._default_save_dir()
-            path, _ = QFileDialog.getSaveFileName(
-                None, "輸出選取頁面",
-                str(Path(save_dir) / "選取頁面.pdf") if save_dir else "選取頁面.pdf",
-                "PDF 檔案 (*.pdf)"
-            )
-            if not path:
-                return
-            if not self._confirm_encrypted_sources(rows):
-                return
-            QApplication.setOverrideCursor(Qt.WaitCursor)
-            try:
-                self._export_service.export_selected(rows, path, options)
-                self._notify_success(f"已輸出 {len(rows)} 頁至：\n{path}", output_path=path)
-            except Exception as e:
-                self._view.show_error("輸出失敗", str(e))
-            finally:
-                QApplication.restoreOverrideCursor()
+    def on_export_single_pages(self) -> None:
+        self._export_rows_as_single_pages(self._view.get_selected_rows())
 
     def on_open_settings(self) -> None:
-        """開啟設定視窗；關閉後重新讀取設定（含縮圖縮放等即時生效項目）。"""
         dlg = SettingsDialog(None)
         dlg.exec()
         self._settings = AppSettings()
