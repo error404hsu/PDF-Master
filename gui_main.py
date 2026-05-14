@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 
 from PySide6.QtCore import QSize, Qt
-from PySide6.QtGui import QAction, QDragEnterEvent, QDropEvent, QFont, QKeySequence, QShortcut
+from PySide6.QtGui import QAction, QDragEnterEvent, QDropEvent, QFont, QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
@@ -55,6 +55,16 @@ _SUPPORTED_SUFFIXES = frozenset({
 })
 
 
+def resource_path(relative_path: str) -> str:
+    """取得資源檔的絕對路徑。
+
+    開發期：回傳相對於本檔案的路徑。
+    PyInstaller 打包後：回傳 _MEIPASS 臨時解壓目錄中的路徑。
+    """
+    base = getattr(sys, "_MEIPASS", Path(__file__).resolve().parent)
+    return str(Path(base) / relative_path)
+
+
 class MainWindow(QMainWindow):
     def __init__(self, is_dark: bool = False) -> None:
         super().__init__()
@@ -62,6 +72,13 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("PDF排列哥 Pro")
         self.resize(1300, 800)
         self.setAcceptDrops(True)
+
+        # 設定視窗左上角圖示（開發期與打包後皆適用）
+        icon_file = resource_path("PDF.ico")
+        if Path(icon_file).exists():
+            self.setWindowIcon(QIcon(icon_file))
+        else:
+            logger.warning("找不到圖示檔案: %s", icon_file)
 
         self.thumb_path = Path("./.thumbnails")
 
