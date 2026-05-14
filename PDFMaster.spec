@@ -11,6 +11,7 @@ a = Analysis(
     datas=[
         ('core', 'core'),
         ('adapters', 'adapters'),
+        ('PDF.ico', '.'),       # 將圖示捆綁至執行目錄根層
     ],
     hiddenimports=[
         'fitz',
@@ -49,7 +50,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='PDF.ico', # 已指向根目錄的 PDF.ico
+    icon='PDF.ico',             # EXE 檔案本身的圖示
 )
 
 coll = COLLECT(
