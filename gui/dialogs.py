@@ -33,11 +33,65 @@ from gui.settings import AppSettings
 from gui.styles import UiStyles
 
 
+def _dialog_qss(is_dark: bool) -> str:
+    if is_dark:
+        return f"""
+        QGroupBox {{
+            color: {UiStyles.DARK_TEXT};
+            border: 1px solid {UiStyles.DARK_BORDER};
+            border-radius: 8px;
+            margin-top: 12px;
+            padding-top: 16px;
+            font-weight: 600;
+        }}
+        QGroupBox::title {{
+            subcontrol-origin: margin;
+            left: 12px;
+            padding: 0 6px;
+        }}
+        QLineEdit, QComboBox, QDoubleSpinBox, QSpinBox {{
+            background-color: {UiStyles.DARK_SURFACE};
+            color: {UiStyles.DARK_TEXT};
+            border: 1px solid {UiStyles.DARK_BORDER};
+            border-radius: 6px;
+            padding: 5px 8px;
+        }}
+        QCheckBox {{
+            color: {UiStyles.DARK_TEXT};
+        }}
+        QLabel {{
+            color: {UiStyles.DARK_TEXT};
+        }}
+        """
+    return f"""
+    QGroupBox {{
+        border: 1px solid {UiStyles.PANEL_BORDER};
+        border-radius: 8px;
+        margin-top: 12px;
+        padding-top: 16px;
+        font-weight: 600;
+    }}
+    QGroupBox::title {{
+        subcontrol-origin: margin;
+        left: 12px;
+        padding: 0 6px;
+    }}
+    QLineEdit, QComboBox, QDoubleSpinBox, QSpinBox {{
+        background-color: #ffffff;
+        border: 1px solid {UiStyles.PANEL_BORDER};
+        border-radius: 6px;
+        padding: 5px 8px;
+    }}
+    """
+
+
 class PreviewDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("高品質預覽")
         self.setMinimumSize(800, 900)
+
+        self._is_dark = UiStyles.is_dark_mode()
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -48,14 +102,17 @@ class PreviewDialog(QDialog):
 
         self.image_label = QLabel("正在渲染高品質影像...")
         self.image_label.setAlignment(Qt.AlignCenter)
+        label_color = UiStyles.DARK_TEXT_MUTED if self._is_dark else UiStyles.TEXT_MUTED
         self.image_label.setStyleSheet(
-            "color: #94a3b8; font-size: 10pt; font-weight: normal;"
+            f"color: {label_color}; font-size: 10pt; font-weight: normal;"
         )
 
         self.scroll.setWidget(self.image_label)
         layout.addWidget(self.scroll)
 
-        self.setStyleSheet("background-color: #0f172a; color: white; border: none;")
+        bg = UiStyles.DARK_BG if self._is_dark else "#ffffff"
+        txt = UiStyles.DARK_TEXT if self._is_dark else UiStyles.TEXT_MAIN
+        self.setStyleSheet(f"background-color: {bg}; color: {txt}; border: none;")
         self.full_pixmap: QPixmap | None = None
 
     @Slot(QImage, str)
@@ -96,6 +153,9 @@ class SettingsDialog(QDialog):
         self.setWindowTitle("設定")
         self.setMinimumWidth(500)
         self.setModal(True)
+
+        is_dark = UiStyles.is_dark_mode()
+        self.setStyleSheet(_dialog_qss(is_dark))
 
         self._settings = AppSettings()
         outer = QVBoxLayout(self)

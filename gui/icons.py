@@ -83,9 +83,61 @@ _SVG_SETTINGS = """
 </svg>
 """
 
+_SVG_EXPORT_SELECTED = """
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
+  <rect x="1.5" y="2" width="10" height="12" rx="1.5" fill="#3b82f6" opacity="0.2"/>
+  <rect x="4" y="1.5" width="10" height="12" rx="1.5" fill="#475569"/>
+  <path d="M9 6v4" stroke="white" stroke-width="1.4" stroke-linecap="round"/>
+  <path d="M7.3 8.4 9 6.5l1.7 1.9" stroke="white" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M6.8 11.3h4.4" stroke="white" stroke-width="1.2" stroke-linecap="round"/>
+  <circle cx="3" cy="3.5" r="1" fill="#f97316"/>
+</svg>
+"""
+
+_SVG_EXPORT_ALL = """
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
+  <rect x="1" y="2.5" width="10" height="11" rx="1.5" fill="#3b82f6" opacity="0.2"/>
+  <rect x="3" y="1" width="10" height="11" rx="1.5" fill="#475569"/>
+  <path d="M8 5.5v5" stroke="white" stroke-width="1.4" stroke-linecap="round"/>
+  <path d="M6.3 7.9 8 9.5l1.7-1.6" stroke="white" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M5.8 10.8h4.4" stroke="white" stroke-width="1.2" stroke-linecap="round"/>
+  <rect x="8.5" y="3.5" width="7" height="8.5" rx="1.2" fill="#f97316" opacity="0.7"/>
+</svg>
+"""
+
+_SVG_DOCUMENT = """
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
+  <path d="M4 2h10l6 6v13a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 21V2Z" fill="#3b82f6"/>
+  <path d="M14 2v5.5a.5.5 0 0 0 .5.5H20" fill="#bfdbfe"/>
+  <path d="M14 2v5.5a.5.5 0 0 0 .5.5H20L14 2Z" fill="#1e40af" opacity="0.3"/>
+  <path d="M7 10h10M7 13h7M7 16h8" stroke="white" stroke-width="1.5" stroke-linecap="round" opacity="0.9"/>
+</svg>
+"""
+
+_SVG_INFO = """
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
+  <circle cx="8" cy="8" r="7" fill="white" stroke="white" stroke-width="2"/>
+  <path d="M8 7.5v4M8 5v.5" stroke="#475569" stroke-width="1.5" stroke-linecap="round"/>
+</svg>
+"""
+
+_SVG_SUCCESS = """
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
+  <circle cx="8" cy="8" r="7" fill="white" stroke="white" stroke-width="2"/>
+  <path d="M5.5 8.5 7 10l3.5-3.5" stroke="#10b981" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
+"""
+
+_SVG_ERROR = """
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
+  <circle cx="8" cy="8" r="7" fill="white" stroke="white" stroke-width="2"/>
+  <path d="m5.5 5.5 5 5M10.5 5.5l-5 5" stroke="#f43f5e" stroke-width="1.5" stroke-linecap="round"/>
+</svg>
+"""
+
 # key → (StandardPixmap_attr_name, fallback_svg)
 _ICON_MAP: dict[str, tuple[str, str]] = {
-    "open_file":       ("SP_FileDialogStart",       _SVG_FOLDER_OPEN),
+    "open_file":       ("SP_DialogOpenButton",       _SVG_FOLDER_OPEN),
     "open_folder":     ("SP_DirOpenIcon",            _SVG_FOLDER_OPEN),
     "undo":            ("SP_ArrowBack",              ""),
     "redo":            ("SP_ArrowForward",           ""),
@@ -93,10 +145,14 @@ _ICON_MAP: dict[str, tuple[str, str]] = {
     "rotate_180":      ("",                          _SVG_ROTATE_180),
     "rotate_right":    ("",                          _SVG_ROTATE_RIGHT),
     "delete":          ("SP_TrashIcon",              _SVG_TRASH),
-    "export_selected": ("SP_FileDialogDetailedView", ""),
+    "export_selected": ("SP_FileDialogDetailedView", _SVG_EXPORT_SELECTED),
     "export_single":   ("",                          _SVG_EXPORT_SINGLE),
-    "export":          ("SP_DialogSaveButton",       ""),
+    "export":          ("SP_DialogSaveButton",       _SVG_EXPORT_ALL),
     "settings":        ("SP_FileDialogContentsView", _SVG_SETTINGS),
+    "document":        ("SP_FileIcon",               _SVG_DOCUMENT),
+    "info":            ("SP_MessageBoxInformation",  _SVG_INFO),
+    "success":         ("",                          _SVG_SUCCESS),
+    "error_icon":      ("SP_MessageBoxCritical",     _SVG_ERROR),
 }
 
 

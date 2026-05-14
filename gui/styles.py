@@ -45,7 +45,7 @@ class UiStyles:
     # ── 卡片陰影繪製參數（供 PageCardDelegate.paint() 使用）──────
     # 以 QPainter 手動繪製，不用 QGraphicsDropShadowEffect
     # （後者掛在 Delegate 上會造成整個 viewport 重繪效能問題）
-    CARD_SHADOW_COLOR = (0, 0, 0, 22)   # RGBA tuple → QColor(r,g,b,a)
+    CARD_SHADOW_COLOR = (0, 0, 0, 32)   # RGBA tuple → QColor(r,g,b,a)
     CARD_SHADOW_OFFSET = (0, 2)          # (dx, dy)
     CARD_SHADOW_RADIUS = 6               # 模糊展開 px（以多層漸變矩形模擬）
     CARD_RADIUS = 10                     # 卡片圓角（統一升級至 10px）
@@ -60,77 +60,12 @@ class UiStyles:
     DARK_CARD_BG = "#1e293b"
     DARK_CARD_BORDER = "#334155"
 
-    # ── QSS：一般按鈕 ─────────────────────────────────────────────
-    BASE_BUTTON = """
-    QPushButton {
-        background-color: #f8fafc;
-        color: #64748b;
-        border: 1px solid #e2e8f0;
-        border-radius: 8px;
-        font-weight: normal;
-        font-size: 10pt;
-        padding: 4px 10px;
-    }
-    QPushButton:hover {
-        background-color: #f1f5f9;
-        border-color: #cbd5e1;
-    }
-    QPushButton:pressed {
-        background-color: #e2e8f0;
-    }
-    QPushButton:disabled {
-        color: #cbd5e1;
-        background-color: #ffffff;
-        border-color: #f1f5f9;
-    }
-    """
-
-    DANGER_BUTTON = """
-    QPushButton {
-        color: #f43f5e;
-        background-color: #fff1f2;
-        border: 1px solid #fecdd3;
-        border-radius: 8px;
-        font-weight: normal;
-        font-size: 10pt;
-        padding: 4px 10px;
-    }
-    QPushButton:hover {
-        background-color: #ffe4e6;
-        border-color: #fda4af;
-    }
-    QPushButton:disabled {
-        color: #fda4af;
-        background-color: #fffafa;
-        border-color: #ffe4e6;
-    }
-    """
-
-    PRIMARY_BUTTON = """
-    QPushButton {
-        background-color: #3b82f6;
-        color: white;
-        border: none;
-        border-radius: 8px;
-        font-weight: 600;
-        font-size: 10pt;
-        padding: 5px 14px;
-    }
-    QPushButton:hover {
-        background-color: #2563eb;
-    }
-    QPushButton:disabled {
-        background-color: #93c5fd;
-        color: #eff6ff;
-    }
-    """
-
     # ── QSS：清單視圖 ─────────────────────────────────────────────
     LIST_VIEW = """
     QListView {
         background-color: #f1f5f9;
         border: none;
-        padding: 20px 20px 20px 50px;
+        padding: 24px;
         outline: none;
     }
     """
@@ -140,7 +75,7 @@ class UiStyles:
     QListView {
         background-color: #0f172a;
         border: none;
-        padding: 20px 20px 20px 50px;
+        padding: 24px;
         outline: none;
     }
     """
@@ -302,6 +237,20 @@ QToolButton:disabled { background-color: #93c5fd; }
 """
 
     # ── QSS：右鍵選單（深色）─────────────────────────────────────
+    CONTEXT_MENU = """
+    QMenu {
+        background-color: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 4px;
+        font-size: 10pt;
+        color: #1e293b;
+    }
+    QMenu::item { padding: 6px 24px; border-radius: 6px; color: #1e293b; }
+    QMenu::item:selected { background-color: #eff6ff; color: #1e40af; }
+    QMenu::separator { height: 1px; background-color: #e2e8f0; margin: 4px 8px; }
+    """
+
     CONTEXT_MENU_DARK = """
     QMenu {
         background-color: #1e293b;

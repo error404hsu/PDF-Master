@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QStyledItemDelegate,
 )
 
+from gui.icons import AppIcons
 from gui.models import PAGE_ROLE, THUMB_ERROR_ROLE, THUMB_STATE_ROLE, ThumbState
 from gui.styles import SOURCE_COLORS, UiStyles
 
@@ -95,6 +96,7 @@ class PageCardDelegate(QStyledItemDelegate):
         rect = option.rect.adjusted(8, 8, -8, -8)
         thumb_area = rect.adjusted(10, 14, -10, -50)
         is_selected = bool(option.state & QStyle.State_Selected)
+        is_hovered = bool(option.state & QStyle.State_MouseOver)
         radius = UiStyles.CARD_RADIUS
 
         # 1. 卡片陰影（在卡片底層繪製）
@@ -104,6 +106,9 @@ class PageCardDelegate(QStyledItemDelegate):
         if is_selected:
             painter.setPen(QPen(QColor(UiStyles.PRIMARY), 2.5))
             painter.setBrush(QColor(UiStyles.PRIMARY_SOFT))
+        elif is_hovered:
+            painter.setPen(QPen(QColor("#93c5fd"), 1.5))
+            painter.setBrush(QColor("#f0f7ff"))
         else:
             painter.setPen(QPen(QColor(UiStyles.CARD_BORDER), 1))
             painter.setBrush(Qt.white)
@@ -221,6 +226,8 @@ class PageListView(QListView):
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self._show_context_menu)
 
+        self.viewport().setMouseTracking(True)
+
         self._drop_index: int = -1
         self._drop_x: int = -1
         self._drop_y_top: int = 0
@@ -237,28 +244,16 @@ class PageListView(QListView):
 
         is_dark = UiStyles.is_dark_mode()
         menu = QMenu(self)
-        menu_qss = UiStyles.CONTEXT_MENU_DARK if is_dark else """
-        QMenu {
-            background-color: #ffffff;
-            border: 1px solid #e2e8f0;
-            border-radius: 10px;
-            padding: 4px;
-            font-size: 10pt;
-        }
-        QMenu::item { padding: 6px 24px; border-radius: 6px; color: #1e293b; }
-        QMenu::item:selected { background-color: #eff6ff; color: #1e40af; }
-        QMenu::separator { height: 1px; background-color: #e2e8f0; margin: 4px 8px; }
-        """
-        menu.setStyleSheet(menu_qss)
+        menu.setStyleSheet(UiStyles.CONTEXT_MENU_DARK if is_dark else UiStyles.CONTEXT_MENU)
 
-        act_rot_l = menu.addAction("↺ 左轉 90°")
-        act_rot_180 = menu.addAction("↕ 轉 180°")
-        act_rot_r = menu.addAction("↻ 右轉 90°")
+        act_rot_l = menu.addAction(AppIcons.get("rotate_left"), "左轉 90°")
+        act_rot_180 = menu.addAction(AppIcons.get("rotate_180"), "轉 180°")
+        act_rot_r = menu.addAction(AppIcons.get("rotate_right"), "右轉 90°")
         menu.addSeparator()
-        act_delete = menu.addAction("🗑 刪除頁面")
+        act_delete = menu.addAction(AppIcons.get("delete"), "刪除頁面")
         menu.addSeparator()
-        act_export = menu.addAction("💾 輸出選取頁面")
-        act_export_single = menu.addAction("📄 輸出單頁")
+        act_export = menu.addAction(AppIcons.get("export_selected"), "輸出選取頁面")
+        act_export_single = menu.addAction(AppIcons.get("export_single"), "輸出單頁")
 
         chosen = menu.exec(self.viewport().mapToGlobal(pos))
         if chosen == act_rot_l:

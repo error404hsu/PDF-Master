@@ -1,9 +1,12 @@
 """Empty State 引導元件 — 無頁面時顯示拖放提示。"""
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+
+from gui.icons import AppIcons
+from gui.styles import UiStyles
 
 
 class EmptyStateOverlay(QWidget):
@@ -16,14 +19,15 @@ class EmptyStateOverlay(QWidget):
         layout.setAlignment(Qt.AlignCenter)
         layout.setSpacing(12)
 
-        icon_label = QLabel("📄")
+        icon_label = QLabel()
         icon_label.setAlignment(Qt.AlignCenter)
-        icon_label.setStyleSheet("font-size: 64pt; background: transparent;")
+        icon_label.setPixmap(AppIcons.get("document").pixmap(QSize(72, 72)))
+        icon_label.setStyleSheet("background: transparent;")
 
         title_label = QLabel("拖放 PDF 至此處開始")
         title_label.setAlignment(Qt.AlignCenter)
         title_label.setStyleSheet(
-            "font-size: 18pt; font-weight: bold; color: #64748b; background: transparent;"
+            "font-size: 18pt; font-weight: bold; color: #475569; background: transparent;"
         )
 
         hint_label = QLabel(
@@ -31,7 +35,7 @@ class EmptyStateOverlay(QWidget):
         )
         hint_label.setAlignment(Qt.AlignCenter)
         hint_label.setStyleSheet(
-            "font-size: 10pt; color: #94a3b8; background: transparent;"
+            "font-size: 10pt; color: #475569; background: transparent;"
         )
 
         layout.addWidget(icon_label)
@@ -41,7 +45,7 @@ class EmptyStateOverlay(QWidget):
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        pen = QPen(QColor("#cbd5e1"), 2, Qt.DashLine)
+        pen = QPen(QColor(UiStyles.PANEL_BORDER), 2, Qt.DashLine)
         painter.setPen(pen)
         painter.setBrush(Qt.NoBrush)
         painter.drawRoundedRect(self.rect().adjusted(30, 30, -30, -30), 16, 16)

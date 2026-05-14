@@ -25,12 +25,10 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QApplication,
-    QFrame,
     QHBoxLayout,
     QLabel,
     QMainWindow,
     QProgressBar,
-    QPushButton,
     QSizePolicy,
     QToolBar,
     QVBoxLayout,
@@ -210,21 +208,29 @@ class MainWindow(QMainWindow):
         toolbar.setStyleSheet(UiStyles.TOOLBAR_DARK if self._is_dark else UiStyles.TOOLBAR)
 
         self.act_open_file = QAction(AppIcons.get("open_file"), "開啟檔案", self)
+        self.act_open_file.setToolTip("開啟 PDF 或圖片檔案（支援多選）")
         self.act_open_folder = QAction(AppIcons.get("open_folder"), "開啟資料夾", self)
+        self.act_open_folder.setToolTip("匯入資料夾內所有支援的檔案")
         toolbar.addAction(self.act_open_file)
         toolbar.addAction(self.act_open_folder)
         toolbar.addSeparator()
 
         self.act_undo = QAction(AppIcons.get("undo"), "復原", self)
+        self.act_undo.setToolTip("復原上一步操作（Ctrl+Z）")
         self.act_redo = QAction(AppIcons.get("redo"), "重做", self)
+        self.act_redo.setToolTip("重做已復原的操作（Ctrl+Y）")
         toolbar.addAction(self.act_undo)
         toolbar.addAction(self.act_redo)
         toolbar.addSeparator()
 
         self.act_rot_l = QAction(AppIcons.get("rotate_left"), "左轉 90°", self)
+        self.act_rot_l.setToolTip("將選取頁面向左旋轉 90 度")
         self.act_rot_180 = QAction(AppIcons.get("rotate_180"), "轉 180°", self)
+        self.act_rot_180.setToolTip("將選取頁面旋轉 180 度")
         self.act_rot_r = QAction(AppIcons.get("rotate_right"), "右轉 90°", self)
+        self.act_rot_r.setToolTip("將選取頁面向右旋轉 90 度")
         self.act_delete = QAction(AppIcons.get("delete"), "刪除頁面", self)
+        self.act_delete.setToolTip("刪除選取的頁面（Del）")
         toolbar.addAction(self.act_rot_l)
         toolbar.addAction(self.act_rot_180)
         toolbar.addAction(self.act_rot_r)
@@ -235,36 +241,27 @@ class MainWindow(QMainWindow):
         toolbar.addWidget(spacer)
 
         self.act_export_sel = QAction(AppIcons.get("export_selected"), "輸出選取", self)
+        self.act_export_sel.setToolTip("將選取的頁面輸出為一個 PDF 檔案（Ctrl+Shift+E）")
         self.act_export_single = QAction(AppIcons.get("export_single"), "輸出單頁", self)
+        self.act_export_single.setToolTip("將每頁分別輸出為獨立的 PDF 檔案")
         self.act_export = QAction(AppIcons.get("export"), "輸出結果", self)
+        self.act_export.setToolTip("將所有頁面輸出為一個合併的 PDF 檔案")
         toolbar.addAction(self.act_export_sel)
         toolbar.addAction(self.act_export_single)
         toolbar.addAction(self.act_export)
         toolbar.addSeparator()
 
         self.act_settings = QAction(AppIcons.get("settings"), "設定", self)
+        self.act_settings.setToolTip("開啟應用程式設定（Ctrl+,）")
         toolbar.addAction(self.act_settings)
 
         self.addToolBar(Qt.TopToolBarArea, toolbar)
         self._toolbar = toolbar
 
-    def _make_button(self, text: str, width: int, height: int, variant: str = "base") -> QPushButton:
-        btn = QPushButton(text)
-        btn.setFixedSize(width, height)
-        if variant == "danger":
-            btn.setStyleSheet(UiStyles.DANGER_BUTTON)
-        elif variant == "primary":
-            btn.setStyleSheet(UiStyles.PRIMARY_BUTTON)
-        else:
-            btn.setStyleSheet(UiStyles.BASE_BUTTON)
-        return btn
-
-    def _make_separator(self) -> QFrame:
-        line = QFrame()
-        line.setFrameShape(QFrame.VLine)
-        line.setFixedHeight(24)
-        line.setStyleSheet(f"color: {UiStyles.PANEL_BORDER};")
-        return line
+        # 主要輸出按鈕套用 primary 樣式
+        export_btn = toolbar.widgetForAction(self.act_export)
+        if export_btn is not None:
+            export_btn.setStyleSheet(UiStyles.TOOLBAR_PRIMARY)
 
     def _connect_signals(self) -> None:
         self.act_open_file.triggered.connect(self.presenter.on_add_pdf)

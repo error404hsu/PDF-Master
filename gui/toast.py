@@ -6,20 +6,40 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QEasingCurve, QPropertyAnimation, Qt, QTimer
-from PySide6.QtWidgets import QLabel, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QWidget
 
+from gui.icons import AppIcons
 from gui.styles import UiStyles
 
 _DURATION_MS = 2500
 _FADE_MS = 300
 
 
-class _ToastLabel(QLabel):
+class _ToastLabel(QWidget):
     """單一 Toast 浮層。"""
 
     def __init__(self, parent: QWidget, text: str, kind: str) -> None:
-        super().__init__(text, parent)
-        self.setAlignment(Qt.AlignCenter)
+        super().__init__(parent)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(12, 8, 12, 8)
+        layout.setSpacing(8)
+
+        icon_map = {
+            "info": "info",
+            "error": "error_icon",
+            "success": "success",
+        }
+        icon_name = icon_map.get(kind, "info")
+        icon_label = QLabel()
+        icon_label.setPixmap(AppIcons.get(icon_name).pixmap(16, 16))
+        icon_label.setFixedSize(20, 20)
+        icon_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(icon_label)
+
+        text_label = QLabel(text)
+        text_label.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
+        layout.addWidget(text_label)
+
         style_map = {
             "info": UiStyles.TOAST_INFO,
             "error": UiStyles.TOAST_ERROR,
@@ -40,7 +60,7 @@ class _ToastLabel(QLabel):
             return
         p = self.parent()
         pw, ph = p.width(), p.height()
-        w, h = max(self.width(), 260), max(self.height(), 40)
+        w, h = max(self.width(), 280), max(self.height(), 40)
         self.setFixedSize(w, h)
         self.move((pw - w) // 2, ph - h - 48)
 
