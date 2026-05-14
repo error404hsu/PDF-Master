@@ -20,3 +20,4 @@ Thumbs.db
 *.bak
 *.ico
 *.spec
+.opencode/

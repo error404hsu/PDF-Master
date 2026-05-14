@@ -14,7 +14,15 @@ import sys
 from pathlib import Path
 
 from PySide6.QtCore import QSize, Qt
-from PySide6.QtGui import QAction, QDragEnterEvent, QDropEvent, QFont, QIcon, QKeySequence, QShortcut
+from PySide6.QtGui import (
+    QAction,
+    QDragEnterEvent,
+    QDropEvent,
+    QFont,
+    QIcon,
+    QKeySequence,
+    QShortcut,
+)
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
