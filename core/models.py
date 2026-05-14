@@ -28,7 +28,7 @@ class SourcePdf:
     forms_present: bool = False
     encrypted: bool = False
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         object.__setattr__(self, "path", Path(self.path))
         if not self.doc_id:
             raise ValueError("doc_id must not be empty")
@@ -47,7 +47,7 @@ class PageRef:
     rotation_delta: int = 0
     thumb_path: Path | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.source_path = Path(self.source_path)
 
         if self.thumb_path is not None:
@@ -88,7 +88,7 @@ class PdfInspectionResult:
     encrypted: bool = False
     page_rotations: list[int] = field(default_factory=list)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         object.__setattr__(self, "path", Path(self.path))
         if self.page_count < 0:
             raise ValueError("page_count must be >= 0")
@@ -107,7 +107,7 @@ class ImageInspectionResult:
     format: str              # "jpeg" / "png" / "tiff" 等
     encrypted: bool = False  # 圖片不加密，保留為統一介面
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         object.__setattr__(self, "path", Path(self.path))
         if self.page_count < 1:
             raise ValueError("page_count must be >= 1")
@@ -121,7 +121,7 @@ class ExportPage:
     source_doc_id: str
     source_page_label: str = ""
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         object.__setattr__(self, "source_path", Path(self.source_path))
         object.__setattr__(self, "final_rotation", _normalize_rotation(self.final_rotation))
 
@@ -141,7 +141,7 @@ class ExportOptions:
     metadata_policy: MetadataPolicy = "first_pdf"
     deflate_level: int = 6  # zlib 壓縮等級，0 = 不壓縮，9 = 最大壓縮
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         allowed = {"first_pdf", "last_pdf", "empty"}
         if self.metadata_policy not in allowed:
             raise ValueError(f"metadata_policy must be one of {sorted(allowed)}")
@@ -164,7 +164,7 @@ class PageSnapshot:
     effective_rotation: int
     thumb_path: str | None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.index < 0:
             raise ValueError("index must be >= 0")
         if self.source_page_index < 0:
@@ -180,7 +180,7 @@ class WorkspaceSnapshot:
     page_count: int
     pages: list[PageSnapshot]
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.source_count < 0:
             raise ValueError("source_count must be >= 0")
         if self.page_count < 0:

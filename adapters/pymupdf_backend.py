@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from core.exceptions import PdfBackendUnavailableError
 from core.models import ExportOptions, ExportPage, ImageInspectionResult, PdfInspectionResult
@@ -12,9 +13,9 @@ SUPPORTED_IMAGE_SUFFIXES = frozenset(
 
 
 class PyMuPdfBackend:
-    def __init__(self):
+    def __init__(self) -> None:
         try:
-            import fitz  # type: ignore
+            import fitz
         except Exception as exc:
             raise PdfBackendUnavailableError(
                 "PyMuPDF (fitz) is not installed. Install it with: pip install pymupdf"
@@ -103,7 +104,7 @@ class PyMuPdfBackend:
             page = doc.load_page(page_index)
             matrix = self.fitz.Matrix(zoom, zoom).prerotate(rotation)
             pix = page.get_pixmap(matrix=matrix, alpha=False)
-            return pix.tobytes("png")
+            return pix.tobytes("png")  # type: ignore[no-any-return]
 
     def export_pages(
         self,
@@ -120,7 +121,7 @@ class PyMuPdfBackend:
 
         out_doc = self.fitz.open()
         # 快取：原始路徑 → 已轉換為 PDF 的 fitz.Document
-        src_docs: dict[Path, object] = {}
+        src_docs: dict[Path, Any] = {}
 
         try:
             for export_page in pages:
@@ -177,7 +178,7 @@ class PyMuPdfBackend:
         finally:
             for src in src_docs.values():
                 try:
-                    src.close()  # type: ignore[union-attr]
+                    src.close()
                 except Exception:
                     pass
             out_doc.close()
@@ -186,7 +187,7 @@ class PyMuPdfBackend:
     # 內部輔助
     # ------------------------------------------------------------------
 
-    def _open_source_as_pdf(self, source_path: Path):
+    def _open_source_as_pdf(self, source_path: Path) -> Any:
         """將路徑對應的來源開啟為 fitz PDF Document。
 
         圖片格式會先以 convert_to_pdf() 轉換為 in-memory PDF，
@@ -200,42 +201,42 @@ class PyMuPdfBackend:
             return self.fitz.open("pdf", pdf_bytes)
         return self.fitz.open(source_path)
 
-    def _page_rotations(self, doc) -> list[int]:
+    def _page_rotations(self, doc: Any) -> list[int]:
         # 使用列表推導式取代 N+1 load_page 迴圈
         return [page.rotation for page in doc]
 
-    def _extract_attachments(self, doc) -> list[str]:
+    def _extract_attachments(self, doc: Any) -> list[str]:
         try:
             names = doc.embfile_names()
             return list(names or [])
         except Exception:
             return []
 
-    def _extract_forms_present(self, doc) -> bool:
+    def _extract_forms_present(self, doc: Any) -> bool:
         try:
             return bool(doc.is_form_pdf)
         except Exception:
             return False
 
-    def _extract_toc(self, doc) -> list:
+    def _extract_toc(self, doc: Any) -> list[Any]:
         try:
             return doc.get_toc() or []
         except Exception:
             return []
 
-    def _extract_page_labels(self, doc) -> list[dict]:
+    def _extract_page_labels(self, doc: Any) -> list[dict[str, Any]]:
         try:
             return doc.get_page_labels() or []
         except Exception:
             return []
 
-    def _apply_metadata(self, out_doc, metadata: dict) -> None:
+    def _apply_metadata(self, out_doc: Any, metadata: dict[str, Any]) -> None:
         try:
             out_doc.set_metadata(metadata)
         except Exception:
             pass
 
-    def _apply_page_labels(self, out_doc, pages: list[ExportPage]) -> None:
+    def _apply_page_labels(self, out_doc: Any, pages: list[ExportPage]) -> None:
         """依畫面排列順序設定連續頁碼（1, 2, 3, …）。
 
         使用單一規則覆蓋整份輸出 PDF：
